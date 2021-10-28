@@ -12,7 +12,7 @@ from argparse import ArgumentParser
 import pytorch_lightning as pl
 from fastmri.data.mri_data import fetch_dir
 from fastmri.data.subsample import create_mask_for_mask_type
-from fastmri.data.transforms import VarNetDataTransform
+from fastmri.data.transforms import VarNetDataTransform, VarNetDataTransformVolume
 from fastmri.pl_modules import FastMriDataModule, VarNetModule
 
 
@@ -27,9 +27,17 @@ def cli_main(args):
         args.mask_type, args.center_fractions, args.accelerations
     )
     # use random masks for train transform, fixed masks for val transform
-    train_transform = VarNetDataTransform(mask_func=mask, use_seed=False)
-    val_transform = VarNetDataTransform(mask_func=mask)
-    test_transform = VarNetDataTransform()
+    volume_training = True
+    use_cache = False
+
+    if volume_training:
+        train_transform = VarNetDataTransformVolume(mask_func=mask, use_seed=False)
+        val_transform = VarNetDataTransformVolume(mask_func=mask)
+        test_transform = VarNetDataTransformVolume()
+    else:
+        train_transform = VarNetDataTransform(mask_func=mask, use_seed=False)
+        val_transform = VarNetDataTransform(mask_func=mask)
+        test_transform = VarNetDataTransform()
     # ptl data module - this handles data loaders
     data_module = FastMriDataModule(
         data_path=args.data_path,
@@ -43,6 +51,8 @@ def cli_main(args):
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         distributed_sampler=(args.accelerator in ("ddp", "ddp_cpu")),
+        volume_training=volume_training,
+        use_dataset_cache_file=use_cache,
     )
 
     # ------------
@@ -82,7 +92,7 @@ def build_args():
     # basic args
     path_config = pathlib.Path("../../fastmri_dirs.yaml")
     backend = "ddp"
-    num_gpus = 2 if backend == "ddp" else 1
+    num_gpus = 1 if backend == "ddp" else 1
     batch_size = 1
 
     # set defaults based on optional directory config

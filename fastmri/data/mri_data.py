@@ -301,7 +301,8 @@ class SliceDataset(torch.utils.data.Dataset):
                 if ex[2]["encoding_size"][1] in num_cols  # type: ignore
             ]
 
-    def _retrieve_metadata(self, fname):
+    @staticmethod
+    def _retrieve_metadata(fname):
         with h5py.File(fname, "r") as hf:
             et_root = etree.fromstring(hf["ismrmrd_header"][()])
 
@@ -356,5 +357,132 @@ class SliceDataset(torch.utils.data.Dataset):
             sample = (kspace, mask, target, attrs, fname.name, dataslice)
         else:
             sample = self.transform(kspace, mask, target, attrs, fname.name, dataslice)
+
+        return sample
+
+
+class VolumeDataset(torch.utils.data.Dataset):
+    def __init__(
+        self,
+        root: Union[str, Path, os.PathLike],
+        challenge: str,
+        transform: Optional[Callable] = None,
+        use_dataset_cache: bool = False,
+        sample_rate: Optional[float] = None,
+        volume_sample_rate: Optional[float] = None,
+        dataset_cache_file: Union[str, Path, os.PathLike] = "dataset_cache.pkl",
+        num_cols: Optional[Tuple[int]] = None,
+    ):
+        """
+                Args:
+                    root: Path to the dataset.
+                    challenge: "singlecoil" or "multicoil" depending on which challenge
+                        to use.
+                    transform: Optional; A callable object that pre-processes the raw
+                        data into appropriate form. The transform function should take
+                        'kspace', 'target', 'attributes', 'filename', and 'slice' as
+                        inputs. 'target' may be null for test data.
+                    use_dataset_cache: Whether to cache dataset metadata. This is very
+                        useful for large datasets like the brain data.
+                    sample_rate: Optional; A float between 0 and 1. This controls what fraction
+                        of the slices should be loaded. Defaults to 1 if no value is given.
+                        When creating a sampled dataset either set sample_rate (sample by slices)
+                        or volume_sample_rate (sample by volumes) but not both.
+                    volume_sample_rate: Optional; A float between 0 and 1. This controls what fraction
+                        of the volumes should be loaded. Defaults to 1 if no value is given.
+                        When creating a sampled dataset either set sample_rate (sample by slices)
+                        or volume_sample_rate (sample by volumes) but not both.
+                    dataset_cache_file: Optional; A file in which to cache dataset
+                        information for faster load times.
+                    num_cols: Optional; If provided, only slices with the desired
+                        number of columns will be considered.
+                """
+        if challenge not in ("singlecoil", "multicoil"):
+            raise ValueError('challenge should be either "singlecoil" or "multicoil"')
+
+        if sample_rate is not None and volume_sample_rate is not None:
+            raise ValueError(
+                "either set sample_rate (sample by slices) or volume_sample_rate (sample by volumes) but not both"
+            )
+
+        self.dataset_cache_file = Path(dataset_cache_file)
+
+        self.transform = transform
+        self.recons_key = (
+            "reconstruction_esc" if challenge == "singlecoil" else "reconstruction_rss"
+        )
+        self.examples = []
+
+        # set default sampling mode if none given
+        if sample_rate is None:
+            sample_rate = 1.0
+        if volume_sample_rate is None:
+            volume_sample_rate = 1.0
+
+        # load dataset cache if we have and user wants to use it
+        if self.dataset_cache_file.exists() and use_dataset_cache:
+            with open(self.dataset_cache_file, "rb") as f:
+                dataset_cache = pickle.load(f)
+        else:
+            dataset_cache = {}
+
+        # check if our dataset is in the cache
+        # if there, use that metadata, if not, then regenerate the metadata
+        if dataset_cache.get(root) is None or not use_dataset_cache:
+            files = list(Path(root).iterdir())
+            for fname in sorted(files):
+                metadata, num_slices = SliceDataset._retrieve_metadata(fname)
+                self.examples += [(fname, metadata)]
+
+            if dataset_cache.get(root) is None and use_dataset_cache:
+                dataset_cache[root] = self.examples
+                logging.info(f"Saving dataset cache to {self.dataset_cache_file}.")
+                with open(self.dataset_cache_file, "wb") as f:
+                    pickle.dump(dataset_cache, f)
+        else:
+            logging.info(f"Using dataset cache from {self.dataset_cache_file}.")
+            self.examples = dataset_cache[root]
+
+        # subsample if desired
+        if sample_rate < 1.0:  # sample by slice
+            random.shuffle(self.examples)
+            num_examples = round(len(self.examples) * sample_rate)
+            self.examples = self.examples[:num_examples]
+        elif volume_sample_rate < 1.0:  # sample by volume
+            vol_names = sorted(list(set([f[0].stem for f in self.examples])))
+            random.shuffle(vol_names)
+            num_volumes = round(len(vol_names) * volume_sample_rate)
+            sampled_vols = vol_names[:num_volumes]
+            self.examples = [
+                example for example in self.examples if example[0].stem in sampled_vols
+            ]
+
+        if num_cols:
+            self.examples = [
+                ex
+                for ex in self.examples
+                if ex[1]["encoding_size"][1] in num_cols  # type: ignore
+            ]
+
+    def __len__(self):
+        return len(self.examples)
+
+    def __getitem__(self, i: int):
+        fname, metadata = self.examples[i]
+
+        with h5py.File(fname, "r") as hf:
+            kspace = np.asarray(hf["kspace"])
+
+            mask = np.asarray(hf["mask"]) if "mask" in hf else None
+
+            target = np.asarray(hf[self.recons_key]) if self.recons_key in hf else None
+
+            attrs = dict(hf.attrs)
+            attrs.update(metadata)
+
+        if self.transform is None:
+            sample = (kspace, mask, target, attrs, fname.name, -1)
+        else:
+            sample = self.transform(kspace, mask, target, attrs, fname.name, -1)
 
         return sample

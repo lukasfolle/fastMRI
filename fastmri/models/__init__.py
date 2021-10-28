@@ -6,4 +6,5 @@ LICENSE file in the root directory of this source tree.
 """
 
 from .unet import Unet
+from .unet_3d import Unet3D
 from .varnet import NormUnet, SensitivityModel, VarNet, VarNetBlock

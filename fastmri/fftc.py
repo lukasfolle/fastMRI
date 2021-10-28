@@ -38,6 +38,33 @@ def fft2c_new(data: torch.Tensor, norm: str = "ortho") -> torch.Tensor:
     return data
 
 
+def fft3c_new(data: torch.Tensor, norm: str = "ortho") -> torch.Tensor:
+    """
+    Apply centered 3 dimensional Fast Fourier Transform.
+
+    Args:
+        data: Complex valued input data containing at least 4 dimensions:
+            dimensions -4, -3 & -2 are spatial dimensions and dimension -1 has size
+            2. All other dimensions are assumed to be batch dimensions.
+        norm: Normalization mode. See ``torch.fft.fft``.
+
+    Returns:
+        The FFT of the input.
+    """
+    if not data.shape[-1] == 2:
+        raise ValueError("Tensor does not have separate complex dim.")
+
+    data = ifftshift(data, dim=[-4, -3, -2])
+    data = torch.view_as_real(
+        torch.fft.fftn(  # type: ignore
+            torch.view_as_complex(data), dim=(-3, -2, -1), norm=norm
+        )
+    )
+    data = fftshift(data, dim=[-4, -3, -2])
+
+    return data
+
+
 def ifft2c_new(data: torch.Tensor, norm: str = "ortho") -> torch.Tensor:
     """
     Apply centered 2-dimensional Inverse Fast Fourier Transform.
@@ -64,6 +91,32 @@ def ifft2c_new(data: torch.Tensor, norm: str = "ortho") -> torch.Tensor:
 
     return data
 
+
+def ifft3c_new(data: torch.Tensor, norm: str = "ortho") -> torch.Tensor:
+    """
+    Apply centered 3-dimensional Inverse Fast Fourier Transform.
+
+    Args:
+        data: Complex valued input data containing at least 4 dimensions:
+            dimensions -4, -3 & -2 are spatial dimensions and dimension -1 has size
+            2. All other dimensions are assumed to be batch dimensions.
+        norm: Normalization mode. See ``torch.fft.ifft``.
+
+    Returns:
+        The IFFT of the input.
+    """
+    if not data.shape[-1] == 2:
+        raise ValueError("Tensor does not have separate complex dim.")
+
+    data = ifftshift(data, dim=[-4, -3, -2])
+    data = torch.view_as_real(
+        torch.fft.ifftn(  # type: ignore
+            torch.view_as_complex(data), dim=(-3, -2, -1), norm=norm
+        )
+    )
+    data = fftshift(data, dim=[-4, -3, -2])
+
+    return data
 
 # Helper functions
 

@@ -14,7 +14,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from fastmri.data import transforms
 
-from fastmri.models.unet import Unet
+from fastmri.models.unet_3d import Unet3D
 
 
 class NormUnet(nn.Module):
@@ -44,7 +44,7 @@ class NormUnet(nn.Module):
         """
         super().__init__()
 
-        self.unet = Unet(
+        self.unet = Unet3D(
             in_chans=in_chans,
             out_chans=out_chans,
             chans=chans,
@@ -53,25 +53,25 @@ class NormUnet(nn.Module):
         )
 
     def complex_to_chan_dim(self, x: torch.Tensor) -> torch.Tensor:
-        b, c, h, w, two = x.shape
+        b, c, d, h, w, two = x.shape
         assert two == 2
-        return x.permute(0, 4, 1, 2, 3).reshape(b, 2 * c, h, w)
+        return x.permute(0, 5, 1, 2, 3, 4).reshape(b, 2 * c, d, h, w)
 
     def chan_complex_to_last_dim(self, x: torch.Tensor) -> torch.Tensor:
-        b, c2, h, w = x.shape
+        b, c2, d, h, w = x.shape
         assert c2 % 2 == 0
         c = c2 // 2
-        return x.view(b, 2, c, h, w).permute(0, 2, 3, 4, 1).contiguous()
+        return x.view(b, 2, c, d, h, w).permute(0, 2, 3, 4, 5, 1).contiguous()
 
     def norm(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         # group norm
-        b, c, h, w = x.shape
-        x = x.view(b, 2, c // 2 * h * w)
+        b, c, d, h, w = x.shape
+        x = x.view(b, 2, c // 2 * d * h * w)
 
-        mean = x.mean(dim=2).view(b, 2, 1, 1)
-        std = x.std(dim=2).view(b, 2, 1, 1)
+        mean = x.mean(dim=2).view(b, 2, 1, 1, 1)
+        std = x.std(dim=2).view(b, 2, 1, 1, 1)
 
-        x = x.view(b, c, h, w)
+        x = x.view(b, c, d, h, w)
 
         return (x - mean) / std, mean, std
 
@@ -82,29 +82,33 @@ class NormUnet(nn.Module):
 
     def pad(
         self, x: torch.Tensor
-    ) -> Tuple[torch.Tensor, Tuple[List[int], List[int], int, int]]:
-        _, _, h, w = x.shape
+    ) -> Tuple[torch.Tensor, Tuple[List[int], List[int], List[int], int, int, int]]:
+        _, _, d, h, w = x.shape
         w_mult = ((w - 1) | 15) + 1
         h_mult = ((h - 1) | 15) + 1
+        d_mult = ((d - 1) | 15) + 1
         w_pad = [math.floor((w_mult - w) / 2), math.ceil((w_mult - w) / 2)]
         h_pad = [math.floor((h_mult - h) / 2), math.ceil((h_mult - h) / 2)]
+        d_pad = [math.floor((d_mult - d) / 2), math.ceil((d_mult - d) / 2)]
         # TODO: fix this type when PyTorch fixes theirs
         # the documentation lies - this actually takes a list
         # https://github.com/pytorch/pytorch/blob/master/torch/nn/functional.py#L3457
         # https://github.com/pytorch/pytorch/pull/16949
-        x = F.pad(x, w_pad + h_pad)
+        x = F.pad(x, w_pad + h_pad + d_pad)
 
-        return x, (h_pad, w_pad, h_mult, w_mult)
+        return x, (d_pad, h_pad, w_pad, d_mult, h_mult, w_mult)
 
     def unpad(
         self,
         x: torch.Tensor,
+        d_pad: List[int],
         h_pad: List[int],
         w_pad: List[int],
+        d_mult: int,
         h_mult: int,
         w_mult: int,
     ) -> torch.Tensor:
-        return x[..., h_pad[0] : h_mult - h_pad[1], w_pad[0] : w_mult - w_pad[1]]
+        return x[..., d_pad[0] : d_mult - d_pad[1], h_pad[0] : h_mult - h_pad[1], w_pad[0] : w_mult - w_pad[1]]
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if not x.shape[-1] == 2:
@@ -164,15 +168,15 @@ class SensitivityModel(nn.Module):
         )
 
     def chans_to_batch_dim(self, x: torch.Tensor) -> Tuple[torch.Tensor, int]:
-        b, c, h, w, comp = x.shape
+        b, c, d, h, w, comp = x.shape
 
-        return x.view(b * c, 1, h, w, comp), b
+        return x.view(b * c, 1, d, h, w, comp), b
 
     def batch_chans_to_chan_dim(self, x: torch.Tensor, batch_size: int) -> torch.Tensor:
-        bc, _, h, w, comp = x.shape
+        bc, _, d, h, w, comp = x.shape
         c = bc // batch_size
 
-        return x.view(batch_size, c, h, w, comp)
+        return x.view(batch_size, c, d, h, w, comp)
 
     def divide_root_sum_of_squares(self, x: torch.Tensor) -> torch.Tensor:
         return x / fastmri.rss_complex(x, dim=1).unsqueeze(-1).unsqueeze(1)
@@ -182,7 +186,7 @@ class SensitivityModel(nn.Module):
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         if num_low_frequencies is None or num_low_frequencies == 0:
             # get low frequency line locations and mask them out
-            squeezed_mask = mask[:, 0, 0, :, 0].to(torch.int8)
+            squeezed_mask = mask[:, 0, 0, 0, :, 0].to(torch.int8)
             cent = squeezed_mask.shape[1] // 2
             # running argmin returns the first non-zero
             left = torch.argmin(squeezed_mask[:, :cent].flip(1), dim=1)
@@ -214,7 +218,7 @@ class SensitivityModel(nn.Module):
             )
 
         # convert to image space
-        images, batches = self.chans_to_batch_dim(fastmri.ifft2c(masked_kspace))
+        images, batches = self.chans_to_batch_dim(fastmri.ifft3c(masked_kspace))
 
         # estimate sensitivities
         return self.divide_root_sum_of_squares(
@@ -222,7 +226,7 @@ class SensitivityModel(nn.Module):
         )
 
 
-class VarNet(nn.Module):
+class VarNet3D(nn.Module):
     """
     A full variational network model.
 
@@ -275,7 +279,7 @@ class VarNet(nn.Module):
         for cascade in self.cascades:
             kspace_pred = cascade(kspace_pred, masked_kspace, mask, sens_maps)
 
-        return fastmri.rss(fastmri.complex_abs(fastmri.ifft2c(kspace_pred)), dim=1)
+        return fastmri.rss(fastmri.complex_abs(fastmri.ifft3c(kspace_pred)), dim=1)
 
 
 class VarNetBlock(nn.Module):
@@ -299,11 +303,11 @@ class VarNetBlock(nn.Module):
         self.dc_weight = nn.Parameter(torch.ones(1))
 
     def sens_expand(self, x: torch.Tensor, sens_maps: torch.Tensor) -> torch.Tensor:
-        return fastmri.fft2c(fastmri.complex_mul(x, sens_maps))
+        return fastmri.fft3c(fastmri.complex_mul(x, sens_maps))
 
     def sens_reduce(self, x: torch.Tensor, sens_maps: torch.Tensor) -> torch.Tensor:
         return fastmri.complex_mul(
-            fastmri.ifft2c(x), fastmri.complex_conj(sens_maps)
+            fastmri.ifft3c(x), fastmri.complex_conj(sens_maps)
         ).sum(dim=1, keepdim=True)
 
     def forward(
@@ -323,5 +327,5 @@ class VarNetBlock(nn.Module):
 
 
 if __name__ == "__main__":
-    vn = VarNet()
-    vn(torch.rand((1, 1, 64, 64, 2)), torch.rand((1, 1, 1, 64, 1)) > 0.5)
+    vn = VarNet3D()
+    vn(torch.rand((1, 1, 8, 64, 64, 2)), torch.rand((1, 1, 1, 1, 64, 1)) > 0.5)

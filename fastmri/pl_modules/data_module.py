@@ -12,7 +12,7 @@ from typing import Callable, Optional, Union
 import fastmri
 import pytorch_lightning as pl
 import torch
-from fastmri.data import CombinedSliceDataset, SliceDataset
+from fastmri.data import CombinedSliceDataset, SliceDataset, VolumeDataset
 
 
 def worker_init_fn(worker_id):
@@ -91,6 +91,7 @@ class FastMriDataModule(pl.LightningDataModule):
         batch_size: int = 1,
         num_workers: int = 4,
         distributed_sampler: bool = False,
+        volume_training: bool = False,
     ):
         """
         Args:
@@ -137,6 +138,7 @@ class FastMriDataModule(pl.LightningDataModule):
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.distributed_sampler = distributed_sampler
+        self.volume_training = volume_training
 
     def _create_data_loader(
         self,
@@ -185,15 +187,24 @@ class FastMriDataModule(pl.LightningDataModule):
                 data_path = self.test_path
             else:
                 data_path = self.data_path / f"{self.challenge}_{data_partition}"
-
-            dataset = SliceDataset(
-                root=data_path,
-                transform=data_transform,
-                sample_rate=sample_rate,
-                volume_sample_rate=volume_sample_rate,
-                challenge=self.challenge,
-                use_dataset_cache=self.use_dataset_cache_file,
-            )
+            if self.volume_training:
+                dataset = VolumeDataset(
+                    root=data_path,
+                    transform=data_transform,
+                    sample_rate=sample_rate,
+                    volume_sample_rate=volume_sample_rate,
+                    challenge=self.challenge,
+                    use_dataset_cache=self.use_dataset_cache_file,
+                )
+            else:
+                dataset = SliceDataset(
+                    root=data_path,
+                    transform=data_transform,
+                    sample_rate=sample_rate,
+                    volume_sample_rate=volume_sample_rate,
+                    challenge=self.challenge,
+                    use_dataset_cache=self.use_dataset_cache_file,
+                )
 
         # ensure that entire volumes go to the same GPU in the ddp setting
         sampler = None
