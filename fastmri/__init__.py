@@ -20,7 +20,7 @@ from .fftc import fftshift
 from .fftc import ifft2c_new as ifft2c
 from .fftc import ifft3c_new as ifft3c
 from .fftc import ifftshift, roll
-from .losses import SSIMLoss
+from .losses import SSIMLoss, SSIM3DLoss
 from .math import (
     complex_abs,
     complex_abs_sq,

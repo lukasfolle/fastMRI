@@ -328,4 +328,4 @@ class VarNetBlock(nn.Module):
 
 if __name__ == "__main__":
     vn = VarNet3D()
-    vn(torch.rand((1, 1, 8, 64, 64, 2)), torch.rand((1, 1, 1, 1, 64, 1)) > 0.5)
+    vn(torch.rand((1, 8, 4, 64, 64, 2)), torch.rand((1, 1, 1, 1, 64, 1)) > 0.5)

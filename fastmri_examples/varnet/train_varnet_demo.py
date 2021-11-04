@@ -6,6 +6,10 @@ LICENSE file in the root directory of this source tree.
 """
 
 import os
+import sys
+p = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+print(p)
+sys.path.append(p)
 import pathlib
 from argparse import ArgumentParser
 
@@ -27,8 +31,8 @@ def cli_main(args):
         args.mask_type, args.center_fractions, args.accelerations
     )
     # use random masks for train transform, fixed masks for val transform
-    volume_training = True
-    use_cache = False
+    volume_training = args.volume_training
+    use_cache = args.use_cache_dataset
 
     if volume_training:
         train_transform = VarNetDataTransformVolume(mask_func=mask, use_seed=False)
@@ -68,6 +72,7 @@ def cli_main(args):
         lr_step_size=args.lr_step_size,
         lr_gamma=args.lr_gamma,
         weight_decay=args.weight_decay,
+        volume_training=args.volume_training
     )
 
     # ------------
@@ -90,10 +95,12 @@ def build_args():
     parser = ArgumentParser()
 
     # basic args
-    path_config = pathlib.Path("../../fastmri_dirs.yaml")
-    backend = "ddp"
+    path_config = pathlib.Path("fastmri_dirs.yaml")
+    backend = None  # "ddp"  # "ddp"  # "ddp"
     num_gpus = 1 if backend == "ddp" else 1
-    batch_size = 1
+    batch_size = num_gpus
+    # volume_training = True
+    # use_cache_dataset = False
 
     # set defaults based on optional directory config
     data_path = fetch_dir("knee_path", path_config)
@@ -126,9 +133,23 @@ def build_args():
     parser.add_argument(
         "--accelerations",
         nargs="+",
-        default=[4],
+        default=[2],
         type=int,
         help="Acceleration rates to use for masks",
+    )
+    parser.add_argument(
+        "--volume_training",
+        nargs="+",
+        default=True,
+        type=bool,
+        help="Whether to train on whole volumes instead of slices",
+    )
+    parser.add_argument(
+        "--use_cache_dataset",
+        nargs="+",
+        default=False,
+        type=bool,
+        help="Whether to use cached dataset",
     )
 
     # data config
@@ -146,11 +167,11 @@ def build_args():
     parser.set_defaults(
         num_cascades=8,  # number of unrolled iterations
         pools=4,  # number of pooling layers for U-Net
-        chans=18,  # number of top-level channels for U-Net
-        sens_pools=4,  # number of pooling layers for sense est. U-Net
-        sens_chans=8,  # number of top-level channels for sense est. U-Net
+        chans=8,  # number of top-level channels for U-Net
+        sens_pools=2,  # number of pooling layers for sense est. U-Net
+        sens_chans=2,  # number of top-level channels for sense est. U-Net
         lr=0.001,  # Adam learning rate
-        lr_step_size=40,  # epoch at which to decrease learning rate
+        lr_step_size=100000,  # epoch at which to decrease learning rate
         lr_gamma=0.1,  # extent to which to decrease learning rate
         weight_decay=0.0,  # weight regularization strength
     )
@@ -162,9 +183,12 @@ def build_args():
         replace_sampler_ddp=False,  # this is necessary for volume dispatch during val
         accelerator=backend,  # what distributed version to use
         seed=42,  # random seed
-        deterministic=True,  # makes things slower, but deterministic
+        deterministic=False,  # makes things slower, but deterministic
         default_root_dir=default_root_dir,  # directory for logs and checkpoints
-        max_epochs=50,  # max number of epochs
+        max_epochs=1000,  # max number of epochs
+        num_workers=0,
+        # overfit_batches=1,
+        log_every_n_steps=50
     )
 
     args = parser.parse_args()

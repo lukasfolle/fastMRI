@@ -50,7 +50,7 @@ class MriModule(pl.LightningModule):
     Other methods from LightningModule can be overridden as needed.
     """
 
-    def __init__(self, num_log_images: int = 16):
+    def __init__(self, num_log_images: int = 100):
         """
         Args:
             num_log_images: Number of images to log. Defaults to 16.
@@ -84,20 +84,18 @@ class MriModule(pl.LightningModule):
                 )
         if val_logs["output"].ndim == 2:
             val_logs["output"] = val_logs["output"].unsqueeze(0)
-        elif val_logs["output"].ndim != 3:
-            raise RuntimeError("Unexpected output size from validation_step.")
+        # Removed for volume training
+        # elif val_logs["output"].ndim != 3:
+        #     raise RuntimeError("Unexpected output size from validation_step.")
         if val_logs["target"].ndim == 2:
             val_logs["target"] = val_logs["target"].unsqueeze(0)
-        elif val_logs["target"].ndim != 3:
-            raise RuntimeError("Unexpected output size from validation_step.")
+        # Removed for volume training
+        # elif val_logs["target"].ndim != 3:
+        #     raise RuntimeError("Unexpected output size from validation_step.")
 
         # pick a set of images to log if we don't have one already
         if self.val_log_indices is None:
-            self.val_log_indices = list(
-                np.random.permutation(len(self.trainer.val_dataloaders[0]))[
-                    : self.num_log_images
-                ]
-            )
+            self.val_log_indices = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 
         # log images to tensorboard
         if isinstance(val_logs["batch_idx"], int):
@@ -113,9 +111,14 @@ class MriModule(pl.LightningModule):
                 output = output / output.max()
                 target = target / target.max()
                 error = error / error.max()
-                self.log_image(f"{key}/target", target)
-                self.log_image(f"{key}/reconstruction", output)
-                self.log_image(f"{key}/error", error)
+                center_slice = target.shape[1] // 2
+                self.log_image(f"{key}/target", target[:, center_slice, ...])
+                self.log_image(f"{key}/reconstruction", output[:, center_slice, ...])
+                self.log_image(f"{key}/error", error[:, center_slice, ...])
+                if "mask" in val_logs.keys():
+                    mask = val_logs["mask"][i]
+                    mask = mask / mask.max()
+                    self.log_image(f"{key}/mask", mask.squeeze().tile((92, 1)).unsqueeze(0))
 
         # compute evaluation metrics
         mse_vals = defaultdict(dict)
@@ -134,9 +137,13 @@ class MriModule(pl.LightningModule):
             target_norms[fname][slice_num] = torch.tensor(
                 evaluate.mse(target, np.zeros_like(target))
             ).view(1)
+            # ssim_vals[fname][slice_num] = torch.tensor(
+            #     evaluate.ssim(target[None, ...], output[None, ...], maxval=maxval)
+            # ).view(1)
             ssim_vals[fname][slice_num] = torch.tensor(
-                evaluate.ssim(target[None, ...], output[None, ...], maxval=maxval)
+                evaluate.ssim3D(target[None, ...], output[None, ...])
             ).view(1)
+
             max_vals[fname] = maxval
 
         return {

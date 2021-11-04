@@ -9,10 +9,17 @@ from argparse import ArgumentParser
 
 import fastmri
 import torch
+import torch.nn.functional as F
 from fastmri.data import transforms
-from fastmri.models import VarNet
+from fastmri.models import VarNet, VarNet3D
 
 from .mri_module import MriModule
+
+
+def mse_mod(x, y, data_range):
+    x = (x - x.min()) / (x.max() - x.min())
+    y = (y - y.min()) / (y.max() - y.min())
+    return F.mse_loss(x, y)
 
 
 class VarNetModule(MriModule):
@@ -42,6 +49,7 @@ class VarNetModule(MriModule):
         lr_step_size: int = 40,
         lr_gamma: float = 0.1,
         weight_decay: float = 0.0,
+        volume_training=False,
         **kwargs,
     ):
         """
@@ -81,15 +89,29 @@ class VarNetModule(MriModule):
         self.lr_gamma = lr_gamma
         self.weight_decay = weight_decay
 
-        self.varnet = VarNet(
-            num_cascades=self.num_cascades,
-            sens_chans=self.sens_chans,
-            sens_pools=self.sens_pools,
-            chans=self.chans,
-            pools=self.pools,
-        )
+        if volume_training:
+            self.varnet = VarNet3D(
+                num_cascades=self.num_cascades,
+                sens_chans=self.sens_chans,
+                sens_pools=self.sens_pools,
+                chans=self.chans,
+                pools=self.pools,
+            )
+        else:
+            self.varnet = VarNet(
+                num_cascades=self.num_cascades,
+                sens_chans=self.sens_chans,
+                sens_pools=self.sens_pools,
+                chans=self.chans,
+                pools=self.pools,
+            )
 
-        self.loss = fastmri.SSIMLoss()
+        if volume_training:
+            print("Using MSELoss")
+            self.loss = mse_mod
+            # self.loss = fastmri.SSIM3DLoss()
+        else:
+            self.loss = fastmri.SSIMLoss()
 
     def forward(self, masked_kspace, mask, num_low_frequencies):
         return self.varnet(masked_kspace, mask, num_low_frequencies)
@@ -118,6 +140,7 @@ class VarNetModule(MriModule):
             "slice_num": batch.slice_num,
             "max_value": batch.max_value,
             "output": output,
+            "mask": batch.mask,
             "target": target,
             "val_loss": self.loss(
                 output.unsqueeze(1), target.unsqueeze(1), data_range=batch.max_value

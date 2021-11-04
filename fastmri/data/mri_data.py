@@ -13,7 +13,10 @@ import xml.etree.ElementTree as etree
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
 from warnings import warn
+import pickle
 
+import fastmri
+from fastmri.data import transforms
 import h5py
 import numpy as np
 import torch
@@ -21,9 +24,9 @@ import yaml
 
 
 def et_query(
-    root: etree.Element,
-    qlist: Sequence[str],
-    namespace: str = "http://www.ismrm.org/ISMRMRD",
+        root: etree.Element,
+        qlist: Sequence[str],
+        namespace: str = "http://www.ismrm.org/ISMRMRD",
 ) -> str:
     """
     ElementTree query function.
@@ -56,7 +59,7 @@ def et_query(
 
 
 def fetch_dir(
-    key: str, data_config_file: Union[str, Path, os.PathLike] = "fastmri_dirs.yaml"
+        key: str, data_config_file: Union[str, Path, os.PathLike] = "fastmri_dirs.yaml"
 ) -> Path:
     """
     Data directory fetcher.
@@ -104,15 +107,15 @@ class CombinedSliceDataset(torch.utils.data.Dataset):
     """
 
     def __init__(
-        self,
-        roots: Sequence[Path],
-        challenges: Sequence[str],
-        transforms: Optional[Sequence[Optional[Callable]]] = None,
-        sample_rates: Optional[Sequence[Optional[float]]] = None,
-        volume_sample_rates: Optional[Sequence[Optional[float]]] = None,
-        use_dataset_cache: bool = False,
-        dataset_cache_file: Union[str, Path, os.PathLike] = "dataset_cache.pkl",
-        num_cols: Optional[Tuple[int]] = None,
+            self,
+            roots: Sequence[Path],
+            challenges: Sequence[str],
+            transforms: Optional[Sequence[Optional[Callable]]] = None,
+            sample_rates: Optional[Sequence[Optional[float]]] = None,
+            volume_sample_rates: Optional[Sequence[Optional[float]]] = None,
+            use_dataset_cache: bool = False,
+            dataset_cache_file: Union[str, Path, os.PathLike] = "dataset_cache.pkl",
+            num_cols: Optional[Tuple[int]] = None,
     ):
         """
         Args:
@@ -152,11 +155,11 @@ class CombinedSliceDataset(torch.utils.data.Dataset):
         if volume_sample_rates is None:
             volume_sample_rates = [None] * len(roots)
         if not (
-            len(roots)
-            == len(transforms)
-            == len(challenges)
-            == len(sample_rates)
-            == len(volume_sample_rates)
+                len(roots)
+                == len(transforms)
+                == len(challenges)
+                == len(sample_rates)
+                == len(volume_sample_rates)
         ):
             raise ValueError(
                 "Lengths of roots, transforms, challenges, sample_rates do not match"
@@ -197,15 +200,15 @@ class SliceDataset(torch.utils.data.Dataset):
     """
 
     def __init__(
-        self,
-        root: Union[str, Path, os.PathLike],
-        challenge: str,
-        transform: Optional[Callable] = None,
-        use_dataset_cache: bool = False,
-        sample_rate: Optional[float] = None,
-        volume_sample_rate: Optional[float] = None,
-        dataset_cache_file: Union[str, Path, os.PathLike] = "dataset_cache.pkl",
-        num_cols: Optional[Tuple[int]] = None,
+            self,
+            root: Union[str, Path, os.PathLike],
+            challenge: str,
+            transform: Optional[Callable] = None,
+            use_dataset_cache: bool = False,
+            sample_rate: Optional[float] = None,
+            volume_sample_rate: Optional[float] = None,
+            dataset_cache_file: Union[str, Path, os.PathLike] = "dataset_cache.pkl",
+            num_cols: Optional[Tuple[int]] = None,
     ):
         """
         Args:
@@ -363,15 +366,15 @@ class SliceDataset(torch.utils.data.Dataset):
 
 class VolumeDataset(torch.utils.data.Dataset):
     def __init__(
-        self,
-        root: Union[str, Path, os.PathLike],
-        challenge: str,
-        transform: Optional[Callable] = None,
-        use_dataset_cache: bool = False,
-        sample_rate: Optional[float] = None,
-        volume_sample_rate: Optional[float] = None,
-        dataset_cache_file: Union[str, Path, os.PathLike] = "dataset_cache.pkl",
-        num_cols: Optional[Tuple[int]] = None,
+            self,
+            root: Union[str, Path, os.PathLike],
+            challenge: str,
+            transform: Optional[Callable] = None,
+            use_dataset_cache: bool = False,
+            sample_rate: Optional[float] = None,
+            volume_sample_rate: Optional[float] = None,
+            dataset_cache_file: Union[str, Path, os.PathLike] = "/opt/tmp/dataset_cache.pkl",
+            num_cols: Optional[Tuple[int]] = None,
     ):
         """
                 Args:
@@ -412,6 +415,7 @@ class VolumeDataset(torch.utils.data.Dataset):
             "reconstruction_esc" if challenge == "singlecoil" else "reconstruction_rss"
         )
         self.examples = []
+        self.cache_path = "/home/lukas/cache"
 
         # set default sampling mode if none given
         if sample_rate is None:
@@ -467,18 +471,76 @@ class VolumeDataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.examples)
 
+    def reco(self, kspace, down_sampling_factor):
+        k_space_downsampled = kspace
+        kspace_center_y = kspace.shape[-2] // 2
+        kspace_center_x = kspace.shape[-1] // 2
+        new_kspace_extend_y_half = kspace.shape[-2] // (down_sampling_factor * 2)
+        new_kspace_extend_x_half = kspace.shape[-1] // (down_sampling_factor * 2)
+        k_space_downsampled = k_space_downsampled[:, :,
+                              kspace_center_y - new_kspace_extend_y_half:kspace_center_y + new_kspace_extend_y_half,
+                              kspace_center_x - new_kspace_extend_x_half:kspace_center_x + new_kspace_extend_x_half]
+        image = torch.zeros(
+            (kspace.shape[1], kspace.shape[2] // down_sampling_factor, kspace.shape[3] // down_sampling_factor))
+        for slice_idx in range(kspace.shape[1]):
+            kspace_slice = transforms.to_tensor(kspace[:, slice_idx])
+            y_slice_center = kspace_slice.shape[-3] // 2
+            y_downsample_extend_half = (kspace_slice.shape[-3] // down_sampling_factor) // 2
+            x_slice_center = kspace_slice.shape[-2] // 2
+            x_downsample_extend_half = (kspace_slice.shape[-2] // down_sampling_factor) // 2
+            kspace_slice = kspace_slice[...,
+                           y_slice_center - y_downsample_extend_half: y_slice_center - y_downsample_extend_half + image.shape[1],
+                           x_slice_center - x_downsample_extend_half: x_slice_center - x_downsample_extend_half + image.shape[2], :]
+            image_slice = fastmri.ifft2c(kspace_slice)
+            image_slice = fastmri.complex_abs(image_slice)
+            image_slice = fastmri.rss(image_slice, dim=0)
+            image[slice_idx] = image_slice
+        image = image.numpy()
+        return image, k_space_downsampled
+
+    def get_cache(self, i: int):
+        file_location = os.path.join(self.cache_path, f"{i}.pkl")
+        if os.path.exists(file_location):
+            with open(file_location, "rb") as handle:
+                file = pickle.load(handle)
+            return file
+        else:
+            sample = self.generate_sample(i)
+
+            with open(file_location, 'wb') as handle:
+                pickle.dump(sample, handle, protocol=pickle.HIGHEST_PROTOCOL)
+            return sample
+
     def __getitem__(self, i: int):
-        fname, metadata = self.examples[i]
+        return self.get_cache(i)
+
+    def generate_sample(self, i: int):
+        if len(self.examples[i]) > 2:
+            fname, _, metadata = self.examples[i]
+        else:
+            fname, metadata = self.examples[i]
 
         with h5py.File(fname, "r") as hf:
             kspace = np.asarray(hf["kspace"])
+            kspace = np.transpose(kspace, (1, 0, 2, 3))
 
             mask = np.asarray(hf["mask"]) if "mask" in hf else None
 
-            target = np.asarray(hf[self.recons_key]) if self.recons_key in hf else None
-
+            # Random slice selection
+            num_slices = 10
+            downsampling_factor = 4
+            x_y_extend = 320 // downsampling_factor
+            rand_first_slice = random.randint(0, kspace.shape[1] - num_slices)
+            rand_last_slice = rand_first_slice + num_slices
+            kspace = kspace[:, rand_first_slice:rand_last_slice]
+            target, k_space_downsampled = self.reco(kspace, downsampling_factor)
+            target = transforms.complex_center_crop_3d(target, (num_slices, x_y_extend, x_y_extend))
+            kspace = k_space_downsampled
             attrs = dict(hf.attrs)
             attrs.update(metadata)
+            # TODO: Investigate effect of padding
+            # attrs["padding_left"] = 0
+            # attrs["padding_right"] = -1
 
         if self.transform is None:
             sample = (kspace, mask, target, attrs, fname.name, -1)

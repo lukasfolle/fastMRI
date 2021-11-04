@@ -188,6 +188,11 @@ class FastMriDataModule(pl.LightningDataModule):
             else:
                 data_path = self.data_path / f"{self.challenge}_{data_partition}"
             if self.volume_training:
+                if is_train:
+                    path = "/cluster/folle/cache_train"
+                else:
+                    path = "/cluster/folle/cache_val"
+                # dataset = VolumeDatasetCached(path)
                 dataset = VolumeDataset(
                     root=data_path,
                     transform=data_transform,

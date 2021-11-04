@@ -185,6 +185,20 @@ def complex_center_crop(data: torch.Tensor, shape: Tuple[int, int]) -> torch.Ten
     return data[..., w_from:w_to, h_from:h_to, :]
 
 
+def complex_center_crop_3d(data: torch.Tensor, shape: Tuple[int, int, int]) -> torch.Tensor:
+    if not (0 < shape[0] <= data.shape[-3] and 0 < shape[1] <= data.shape[-2]):
+        raise ValueError("Invalid shapes.")
+
+    d_from = (data.shape[-3] - shape[0]) // 2
+    w_from = (data.shape[-2] - shape[1]) // 2
+    h_from = (data.shape[-1] - shape[2]) // 2
+    d_to = d_from + shape[0]
+    w_to = w_from + shape[1]
+    h_to = h_from + shape[2]
+
+    return data[..., int(d_from):int(d_to), int(w_from):int(w_to), int(h_from):int(h_to)]
+
+
 def center_crop_to_smallest(
     x: torch.Tensor, y: torch.Tensor
 ) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -528,9 +542,10 @@ class VarNetDataTransformVolume(VarNetDataTransform):
     ) -> Tuple[torch.Tensor, torch.Tensor, int]:
         shape = (1,) * len(data.shape[:-3]) + tuple(data.shape[-3:])
         mask, num_low_frequencies = mask_func(shape, offset, seed)
-        if padding is not None:
-            mask[:, :, : padding[0]] = 0
-            mask[:, :, padding[1]:] = 0  # padding value inclusive on right of zeros
+        # INFO: Removed padding of mask with zeros.
+        # if padding is not None:
+        #     mask[..., : padding[0]] = 0
+        #     mask[..., padding[1]:] = 0  # padding value inclusive on right of zeros
 
         masked_data = data * mask + 0.0  # the + 0.0 removes the sign of the zeros
 
