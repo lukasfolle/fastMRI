@@ -541,7 +541,10 @@ class VarNetDataTransformVolume(VarNetDataTransform):
                    padding: Optional[Sequence[int]] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, int]:
         shape = (1,) * len(data.shape[:-3]) + tuple(data.shape[-3:])
-        mask, num_low_frequencies = mask_func(shape, offset, seed)
+        mask_3d = torch.zeros((1, 1, shape[-3], shape[-2]))
+        for d in range(shape[-3]):
+            mask, num_low_frequencies = mask_func(shape, offset, seed)
+            mask_3d[0, 0, d, :] = mask.squeeze()
         # INFO: Removed padding of mask with zeros.
         # if padding is not None:
         #     mask[..., : padding[0]] = 0

@@ -21,11 +21,14 @@ from fastmri.data import transforms
 
 def mse(gt: np.ndarray, pred: np.ndarray) -> np.ndarray:
     """Compute Mean Squared Error (MSE)"""
+
     return np.mean((gt - pred) ** 2)
 
 
 def nmse(gt: np.ndarray, pred: np.ndarray) -> np.ndarray:
     """Compute Normalized Mean Squared Error (NMSE)"""
+    gt = (gt - gt.min()) / (gt.max() - gt.min())
+    pred = (pred - pred.min()) / (pred.max() - pred.min())
     return np.linalg.norm(gt - pred) ** 2 / np.linalg.norm(gt) ** 2
 
 
@@ -33,6 +36,9 @@ def psnr(
     gt: np.ndarray, pred: np.ndarray, maxval: Optional[float] = None
 ) -> np.ndarray:
     """Compute Peak Signal to Noise Ratio metric (PSNR)"""
+    gt = (gt - gt.min()) / (gt.max() - gt.min())
+    pred = (pred - pred.min()) / (pred.max() - pred.min())
+    maxval = None
     if maxval is None:
         maxval = gt.max()
     return peak_signal_noise_ratio(gt, pred, data_range=maxval)

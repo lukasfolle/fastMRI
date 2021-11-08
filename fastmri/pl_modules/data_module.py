@@ -7,6 +7,7 @@ LICENSE file in the root directory of this source tree.
 
 from argparse import ArgumentParser
 from pathlib import Path
+import os
 from typing import Callable, Optional, Union
 
 import fastmri
@@ -92,6 +93,7 @@ class FastMriDataModule(pl.LightningDataModule):
         num_workers: int = 4,
         distributed_sampler: bool = False,
         volume_training: bool = False,
+        cache_dir=None,
     ):
         """
         Args:
@@ -139,6 +141,7 @@ class FastMriDataModule(pl.LightningDataModule):
         self.num_workers = num_workers
         self.distributed_sampler = distributed_sampler
         self.volume_training = volume_training
+        self.cache_dir = cache_dir
 
     def _create_data_loader(
         self,
@@ -189,10 +192,9 @@ class FastMriDataModule(pl.LightningDataModule):
                 data_path = self.data_path / f"{self.challenge}_{data_partition}"
             if self.volume_training:
                 if is_train:
-                    path = "/cluster/folle/cache_train"
+                    path = os.path.join(self.cache_dir, "cache_train")
                 else:
-                    path = "/cluster/folle/cache_val"
-                # dataset = VolumeDatasetCached(path)
+                    path = os.path.join(self.cache_dir, "cache_val")
                 dataset = VolumeDataset(
                     root=data_path,
                     transform=data_transform,
@@ -200,6 +202,7 @@ class FastMriDataModule(pl.LightningDataModule):
                     volume_sample_rate=volume_sample_rate,
                     challenge=self.challenge,
                     use_dataset_cache=self.use_dataset_cache_file,
+                    cache_path=path
                 )
             else:
                 dataset = SliceDataset(

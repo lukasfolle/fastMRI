@@ -375,6 +375,7 @@ class VolumeDataset(torch.utils.data.Dataset):
             volume_sample_rate: Optional[float] = None,
             dataset_cache_file: Union[str, Path, os.PathLike] = "/opt/tmp/dataset_cache.pkl",
             num_cols: Optional[Tuple[int]] = None,
+            cache_path=None,
     ):
         """
                 Args:
@@ -415,7 +416,11 @@ class VolumeDataset(torch.utils.data.Dataset):
             "reconstruction_esc" if challenge == "singlecoil" else "reconstruction_rss"
         )
         self.examples = []
-        self.cache_path = "/home/lukas/cache"
+        if cache_path is None:
+            self.cache_path = "."
+        else:
+            self.cache_path = cache_path
+        print(f"Saving cache at {self.cache_path}")
 
         # set default sampling mode if none given
         if sample_rate is None:
@@ -502,14 +507,17 @@ class VolumeDataset(torch.utils.data.Dataset):
         file_location = os.path.join(self.cache_path, f"{i}.pkl")
         if os.path.exists(file_location):
             with open(file_location, "rb") as handle:
-                file = pickle.load(handle)
-            return file
+                sample = pickle.load(handle)
         else:
             sample = self.generate_sample(i)
-
             with open(file_location, 'wb') as handle:
                 pickle.dump(sample, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+        if self.transform is None:
             return sample
+
+        sample = self.transform(sample[0], sample[1], sample[2], sample[3], sample[4], -1)
+        return sample
 
     def __getitem__(self, i: int):
         return self.get_cache(i)
@@ -542,9 +550,5 @@ class VolumeDataset(torch.utils.data.Dataset):
             # attrs["padding_left"] = 0
             # attrs["padding_right"] = -1
 
-        if self.transform is None:
             sample = (kspace, mask, target, attrs, fname.name, -1)
-        else:
-            sample = self.transform(kspace, mask, target, attrs, fname.name, -1)
-
         return sample

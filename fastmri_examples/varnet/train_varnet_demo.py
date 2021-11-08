@@ -57,6 +57,7 @@ def cli_main(args):
         distributed_sampler=(args.accelerator in ("ddp", "ddp_cpu")),
         volume_training=volume_training,
         use_dataset_cache_file=use_cache,
+        cache_dir=args.cache_dir
     )
 
     # ------------
@@ -160,6 +161,14 @@ def build_args():
         challenge="multicoil",  # only multicoil implemented for VarNet
         batch_size=batch_size,  # number of samples per batch
         test_path=None,  # path for test split, overwrites data_path
+    )
+
+    parser.add_argument(
+        "--cache_dir",
+        choices=("/home/lukas"),
+        default="/home/lukas",
+        type=str,
+        help="Folder to save cache to",
     )
 
     # module config
