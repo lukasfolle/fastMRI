@@ -207,6 +207,110 @@ class MaskFunc:
             return self.center_fractions[choice], self.accelerations[choice]
 
 
+class MaskFunc3D(MaskFunc):
+    def sample_mask(
+        self,
+        shape: Sequence[int],
+        offset: Optional[int],
+    ) -> Tuple[torch.Tensor, torch.Tensor, int]:
+        """
+        Sample a new k-space mask.
+
+        This function samples and returns two components of a k-space mask: 1)
+        the center mask (e.g., for sensitivity map calculation) and 2) the
+        acceleration mask (for the edge of k-space). Both of these masks, as
+        well as the integer of low frequency samples, are returned.
+
+        Args:
+            shape: Shape of the k-space to subsample.
+            offset: Offset from 0 to begin mask (for equispaced masks).
+
+        Returns:
+            A 3-tuple contaiing 1) the mask for the center of k-space, 2) the
+            mask for the high frequencies of k-space, and 3) the integer count
+            of low frequency samples.
+        """
+        num_cols = shape[-2]
+        center_fraction, acceleration = self.choose_acceleration()
+        num_low_frequencies = round(num_cols * center_fraction)
+        center_mask = self.reshape_mask(
+            self.calculate_center_mask(shape, num_low_frequencies), shape
+        )
+        center_mask = torch.tile(center_mask.squeeze(), (shape[-3], 1)).reshape((1, 1, shape[-3], shape[-2], 1))
+        acceleration_mask = self.reshape_mask(
+            self.calculate_acceleration_mask_3D(
+                num_cols, acceleration, offset, num_low_frequencies, shape
+            ),
+            shape
+        )
+
+        return center_mask, acceleration_mask, num_low_frequencies
+
+    def reshape_mask(self, mask: np.ndarray, shape: Sequence[int]) -> torch.Tensor:
+        """Reshape mask to desired output shape."""
+        num_slices = shape[-3]
+        num_cols = shape[-2]
+        mask_shape = [1 for _ in shape]
+        mask_shape[-2] = num_cols
+        if len(mask.squeeze().shape) > 1:
+            mask_shape[-3] = num_slices
+
+        return torch.from_numpy(mask.reshape(*mask_shape).astype(np.float32))
+
+    def calculate_acceleration_mask_3D(
+        self,
+        num_cols: int,
+        acceleration: int,
+        offset: Optional[int],
+        num_low_frequencies: int,
+        shape
+    ) -> np.ndarray:
+        """
+        Produce mask for non-central acceleration lines.
+
+        Args:
+            num_cols: Number of columns of k-space (2D subsampling).
+            acceleration: Desired acceleration rate.
+            offset: Offset from 0 to begin masking (for equispaced masks).
+            num_low_frequencies: Integer count of low-frequency lines sampled.
+
+        Returns:
+            A mask for the high spatial frequencies of k-space.
+        """
+        raise NotImplementedError
+
+    def calculate_center_mask(
+        self, shape: Sequence[int], num_low_freqs: int
+    ) -> np.ndarray:
+        """
+        Build center mask based on number of low frequencies.
+
+        Args:
+            shape: Shape of k-space to mask.
+            num_low_freqs: Number of low-frequency lines to sample.
+
+        Returns:
+            A mask for hte low spatial frequencies of k-space.
+        """
+        num_cols = shape[-2]
+        mask = np.zeros(num_cols, dtype=np.float32)
+        pad = (num_cols - num_low_freqs + 1) // 2
+        mask[pad : pad + num_low_freqs] = 1
+        assert mask.sum() == num_low_freqs
+
+        return mask
+
+    def choose_acceleration(self):
+        """Choose acceleration based on class parameters."""
+        if self.allow_any_combination:
+            return self.rng.choice(self.center_fractions), self.rng.choice(
+                self.accelerations
+            )
+        else:
+            choice = self.rng.randint(len(self.center_fractions))
+            return self.center_fractions[choice], self.accelerations[choice]
+
+
 class RandomMaskFunc(MaskFunc):
     """
     Creates a random sub-sampling mask of a given shape.
@@ -337,6 +441,44 @@ class EquispacedMaskFractionFunc(MaskFunc):
         accel_samples = np.arange(offset, num_cols - 1, adjusted_accel)
         accel_samples = np.around(accel_samples).astype(np.uint)
         mask[accel_samples] = 1.0
+
+        return mask
+
+
+class EquispacedMaskFractionFunc3D(MaskFunc3D):
+    def calculate_acceleration_mask_3D(
+        self,
+        num_cols: int,
+        acceleration: int,
+        offset: Optional[int],
+        num_low_frequencies: int,
+        shape
+    ) -> np.ndarray:
+        """
+        Produce mask for non-central acceleration lines.
+
+        Args:
+            num_cols: Number of columns of k-space (2D subsampling).
+            acceleration: Desired acceleration rate.
+            offset: Offset from 0 to begin masking. If no offset is specified,
+                then one is selected randomly.
+            num_low_frequencies: Number of low frequencies. Used to adjust mask
+                to exactly match the target acceleration.
+
+        Returns:
+            A mask for the high spatial frequencies of k-space.
+        """
+        # determine acceleration rate by adjusting for the number of low frequencies
+        adjusted_accel_col = (acceleration * (num_low_frequencies - shape[-2])) / (
+            num_low_frequencies * acceleration - shape[-2]
+        )
+        mask = np.zeros((shape[-3], shape[-2]))
+        for slice_idx in range(shape[-3]):
+            if offset is None:
+                offset_col = self.rng.randint(0, high=round(adjusted_accel_col))
+            accel_samples_col = np.arange(offset_col, shape[-2] - 1, adjusted_accel_col)
+            accel_samples_col = np.around(accel_samples_col).astype(np.uint)
+            mask[slice_idx, accel_samples_col] = 1.0
 
         return mask
 
@@ -496,6 +638,8 @@ def create_mask_for_mask_type(
         return EquiSpacedMaskFunc(center_fractions, accelerations)
     elif mask_type_str == "equispaced_fraction":
         return EquispacedMaskFractionFunc(center_fractions, accelerations)
+    elif mask_type_str == "equispaced_fraction_3d":
+        return EquispacedMaskFractionFunc3D(center_fractions, accelerations)
     elif mask_type_str == "magic":
         return MagicMaskFunc(center_fractions, accelerations)
     elif mask_type_str == "magic_fraction":

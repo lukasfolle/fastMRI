@@ -120,8 +120,10 @@ class MriModule(pl.LightningModule):
                     mask = mask / mask.max()
                     if len(mask.squeeze().shape) > 1:
                         mask = mask.squeeze().unsqueeze(0)
+                        mask = mask[..., 0]
                     else:
-                        mask = mask.squeeze().tile((92, 1)).unsqueeze(0)
+                        mask = mask.squeeze()
+                        mask = mask.tile((mask.shape[0], 1)).unsqueeze(0)
                     self.log_image(f"{key}/mask", mask)
 
         # compute evaluation metrics
