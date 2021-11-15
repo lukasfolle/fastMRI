@@ -571,7 +571,7 @@ class CESTDataset(VolumeDataset):
                                            os.PathLike] = "/opt/tmp/dataset_cache.pkl",
                  num_cols: Optional[Tuple[int]] = None,
                  cache_path=None,
-                 num_offsets: int = 16):
+                 num_offsets: int = 8):
         super().__init__(root, challenge, transform, use_dataset_cache, sample_rate,
                          volume_sample_rate, dataset_cache_file, num_cols, cache_path)
         self.cest_transform = lambda x, o: x
@@ -581,8 +581,8 @@ class CESTDataset(VolumeDataset):
         return self.cest_transform(volume, offset)
 
     def generate_offset(self, kspace, mask, hf, metadata, fname, offset):
-        num_slices = 8
-        downsampling_factor = 10
+        num_slices = 20
+        downsampling_factor = 8
         x_y_extend = 320 // downsampling_factor
         # rand_first_slice = random.randint(0, kspace.shape[1] - num_slices)
         # rand_last_slice = rand_first_slice + num_slices
@@ -663,9 +663,10 @@ if __name__ == "__main__":
     #         vol = np.moveaxis(vol, 0, -1)
     #         scroll_slices(vol, title=f"Sample {i} Offset {offset}")
 
-    varnet = VarNet4D(1, 1, 1, 1, 1)
+    varnet = VarNet4D(4, 4, 1, 1, 1).cuda()
     item = cest_ds.__getitem__(0)
     # Mask seems erroenous
-    ret = varnet(item.masked_kspace.unsqueeze(0), item.masked_kspace.unsqueeze(0) > 0.5, item.num_low_frequencies)
+    ret = varnet(item.masked_kspace.unsqueeze(0).cuda(), (item.masked_kspace.unsqueeze(0) > 0.5).cuda(), item.num_low_frequencies)
     print(ret.shape)
+    print(f"GB allocated {torch.cuda.max_memory_allocated() / 10**9}")
     
