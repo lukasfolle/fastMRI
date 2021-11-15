@@ -9,6 +9,7 @@ import contextlib
 from typing import Optional, Sequence, Tuple, Union
 
 import numpy as np
+from scipy.stats import norm
 import torch
 
 
@@ -230,13 +231,28 @@ class MaskFunc3D(MaskFunc):
             mask for the high frequencies of k-space, and 3) the integer count
             of low frequency samples.
         """
+
+        def gaussian(x, mu, sig):
+            return np.exp(-np.power(x - mu, 2.) / (2 * np.power(sig, 2.)))
+        
+        pdf = 1 - np.array([gaussian(s - shape[1] // 2, 0, 5) for s in range(shape[1])])
+        central_slices_start = int(shape[1] / 2 - shape[1] * 0.1)
+        central_slices_end = int(shape[1] / 2 + shape[1] * 0.1)
+        pdf[central_slices_start:central_slices_end] = 0
+        pdf = pdf / pdf.sum()
+        slice_accel = 1.5
+        slice_direction_drop = np.random.choice(np.arange(shape[1]), shape[1] - int(np.round(shape[1] / slice_accel)), p=pdf, replace=False)
+
         num_cols = shape[-2]
         center_fraction, acceleration = self.choose_acceleration()
         num_low_frequencies = round(num_cols * center_fraction)
         center_mask = self.reshape_mask(
             self.calculate_center_mask(shape, num_low_frequencies), shape
         )
+
         center_mask = torch.tile(center_mask.squeeze(), (shape[-3], 1)).reshape((1, 1, shape[-3], shape[-2], 1))
+        center_mask[:, :, slice_direction_drop] = 0
+
         acceleration_mask = self.reshape_mask(
             self.calculate_acceleration_mask_3D(
                 num_cols, acceleration, offset, num_low_frequencies, shape
@@ -468,6 +484,7 @@ class EquispacedMaskFractionFunc3D(MaskFunc3D):
         Returns:
             A mask for the high spatial frequencies of k-space.
         """
+
         # determine acceleration rate by adjusting for the number of low frequencies
         adjusted_accel_col = (acceleration * (num_low_frequencies - shape[-2])) / (
             num_low_frequencies * acceleration - shape[-2]
@@ -475,8 +492,8 @@ class EquispacedMaskFractionFunc3D(MaskFunc3D):
         mask = np.zeros((shape[-3], shape[-2]))
         for slice_idx in range(shape[-3]):
             if offset is None:
-                offset_col = self.rng.randint(0, high=round(adjusted_accel_col))
-            accel_samples_col = np.arange(offset_col, shape[-2] - 1, adjusted_accel_col)
+                offset = self.rng.randint(0, high=round(adjusted_accel_col))
+            accel_samples_col = np.arange(offset, shape[-2] - 1, adjusted_accel_col)
             accel_samples_col = np.around(accel_samples_col).astype(np.uint)
             mask[slice_idx, accel_samples_col] = 1.0
 

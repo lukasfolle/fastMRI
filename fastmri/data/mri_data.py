@@ -373,7 +373,8 @@ class VolumeDataset(torch.utils.data.Dataset):
             use_dataset_cache: bool = False,
             sample_rate: Optional[float] = None,
             volume_sample_rate: Optional[float] = None,
-            dataset_cache_file: Union[str, Path, os.PathLike] = "/opt/tmp/dataset_cache.pkl",
+            dataset_cache_file: Union[str, Path,
+                                      os.PathLike] = "/opt/tmp/dataset_cache.pkl",
             num_cols: Optional[Tuple[int]] = None,
             cache_path=None,
     ):
@@ -483,19 +484,21 @@ class VolumeDataset(torch.utils.data.Dataset):
         new_kspace_extend_y_half = kspace.shape[-2] // (down_sampling_factor * 2)
         new_kspace_extend_x_half = kspace.shape[-1] // (down_sampling_factor * 2)
         k_space_downsampled = k_space_downsampled[:, :,
-                              kspace_center_y - new_kspace_extend_y_half:kspace_center_y + new_kspace_extend_y_half,
-                              kspace_center_x - new_kspace_extend_x_half:kspace_center_x + new_kspace_extend_x_half]
+                                                  kspace_center_y - new_kspace_extend_y_half:kspace_center_y + new_kspace_extend_y_half,
+                                                  kspace_center_x - new_kspace_extend_x_half:kspace_center_x + new_kspace_extend_x_half]
         image = torch.zeros(
             (kspace.shape[1], kspace.shape[2] // down_sampling_factor, kspace.shape[3] // down_sampling_factor))
         for slice_idx in range(kspace.shape[1]):
             kspace_slice = transforms.to_tensor(kspace[:, slice_idx])
             y_slice_center = kspace_slice.shape[-3] // 2
-            y_downsample_extend_half = (kspace_slice.shape[-3] // down_sampling_factor) // 2
+            y_downsample_extend_half = (
+                kspace_slice.shape[-3] // down_sampling_factor) // 2
             x_slice_center = kspace_slice.shape[-2] // 2
-            x_downsample_extend_half = (kspace_slice.shape[-2] // down_sampling_factor) // 2
+            x_downsample_extend_half = (
+                kspace_slice.shape[-2] // down_sampling_factor) // 2
             kspace_slice = kspace_slice[...,
-                           y_slice_center - y_downsample_extend_half: y_slice_center - y_downsample_extend_half + image.shape[1],
-                           x_slice_center - x_downsample_extend_half: x_slice_center - x_downsample_extend_half + image.shape[2], :]
+                                        y_slice_center - y_downsample_extend_half: y_slice_center - y_downsample_extend_half + image.shape[1],
+                                        x_slice_center - x_downsample_extend_half: x_slice_center - x_downsample_extend_half + image.shape[2], :]
             image_slice = fastmri.ifft2c(kspace_slice)
             image_slice = fastmri.complex_abs(image_slice)
             image_slice = fastmri.rss(image_slice, dim=0)
@@ -516,7 +519,8 @@ class VolumeDataset(torch.utils.data.Dataset):
         if self.transform is None:
             return sample
 
-        sample = self.transform(sample[0], sample[1], sample[2], sample[3], sample[4], -1)
+        sample = self.transform(sample[0], sample[1],
+                                sample[2], sample[3], sample[4], -1)
         return sample
 
     def __getitem__(self, i: int):
@@ -542,7 +546,8 @@ class VolumeDataset(torch.utils.data.Dataset):
             rand_last_slice = rand_first_slice + num_slices
             kspace = kspace[:, rand_first_slice:rand_last_slice]
             target, k_space_downsampled = self.reco(kspace, downsampling_factor)
-            target = transforms.complex_center_crop_3d(target, (num_slices, x_y_extend, x_y_extend))
+            target = transforms.complex_center_crop_3d(
+                target, (num_slices, x_y_extend, x_y_extend))
             kspace = k_space_downsampled
             attrs = dict(hf.attrs)
             attrs.update(metadata)
@@ -552,3 +557,115 @@ class VolumeDataset(torch.utils.data.Dataset):
 
             sample = (kspace, mask, target, attrs, fname.name, -1)
         return sample
+
+
+class CESTDataset(VolumeDataset):
+    def __init__(self,
+                 root: Union[str, Path, os.PathLike],
+                 challenge: str,
+                 transform: Optional[Callable] = None,
+                 use_dataset_cache: bool = False,
+                 sample_rate: Optional[float] = None,
+                 volume_sample_rate: Optional[float] = None,
+                 dataset_cache_file: Union[str, Path,
+                                           os.PathLike] = "/opt/tmp/dataset_cache.pkl",
+                 num_cols: Optional[Tuple[int]] = None,
+                 cache_path=None,
+                 num_offsets: int = 16):
+        super().__init__(root, challenge, transform, use_dataset_cache, sample_rate,
+                         volume_sample_rate, dataset_cache_file, num_cols, cache_path)
+        self.cest_transform = lambda x, o: x
+        self.num_offsets = num_offsets
+
+    def apply_virtual_cest_contrast(self, volume, offset: int):
+        return self.cest_transform(volume, offset)
+
+    def generate_offset(self, kspace, mask, hf, metadata, fname, offset):
+        num_slices = 8
+        downsampling_factor = 10
+        x_y_extend = 320 // downsampling_factor
+        # rand_first_slice = random.randint(0, kspace.shape[1] - num_slices)
+        # rand_last_slice = rand_first_slice + num_slices
+        first_slice = 10
+        last_slice = first_slice + num_slices
+        kspace = kspace[:, first_slice:last_slice]
+        target, k_space_downsampled = self.reco(kspace, downsampling_factor)
+        target = transforms.complex_center_crop_3d(
+            target, (num_slices, x_y_extend, x_y_extend))
+        kspace = k_space_downsampled
+        attrs = dict(hf.attrs)
+        attrs.update(metadata)
+
+        target = self.apply_virtual_cest_contrast(target, offset)
+
+        sample = (kspace, mask, target, attrs, fname.name, -1)
+        return sample
+
+    def generate_sample(self, i: int):
+        if len(self.examples[i]) > 2:
+            fname, _, metadata = self.examples[i]
+        else:
+            fname, metadata = self.examples[i]
+
+        samples = []
+        
+
+        with h5py.File(fname, "r") as hf:
+            kspace = np.asarray(hf["kspace"])
+            kspace = np.transpose(kspace, (1, 0, 2, 3))
+
+            mask = np.asarray(hf["mask"]) if "mask" in hf else None
+
+            for o in range(self.num_offsets):
+                sample = self.generate_offset(kspace, mask, hf, metadata, fname, o)
+                samples.append(sample)
+
+        kspace = torch.swapaxes(torch.tensor([s[0] for s in samples]), 0, 1)
+        target = torch.tensor([s[2] for s in samples])
+        return (kspace, mask, target, sample[3], fname.name, -1)
+    
+    def get_cache(self, i: int):
+        file_location = os.path.join(self.cache_path, f"{i}.pkl")
+        if os.path.exists(file_location):
+            with open(file_location, "rb") as handle:
+                samples = pickle.load(handle)
+        else:
+            samples = self.generate_sample(i)
+            with open(file_location, 'wb') as handle:
+                pickle.dump(samples, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+        if self.transform is None:
+            return samples
+        samples = self.transform(*samples)
+        return samples
+
+
+if __name__ == "__main__":
+    from fastmri.data.transforms import VarNetDataTransformVolume4D
+    from fastmri.data.subsample import create_mask_for_mask_type
+    from utils.matplotlib_viewer import scroll_slices
+    import matplotlib.pyplot as plt
+    from fastmri.models.varnet_4d import VarNet4D
+
+    mask = create_mask_for_mask_type("equispaced_fraction_3d", [0.08], [2])
+    transform = VarNetDataTransformVolume4D(mask_func=mask, use_seed=False)
+    cest_ds = CESTDataset("/media/lukas/Hard/multicoil_train", "multicoil", transform, use_dataset_cache=False, cache_path="/home/lukas/PycharmProjects/fastMRI/cache_test")
+    
+    # for i in range(len(cest_ds)):
+    #     item = cest_ds.__getitem__(i)
+    #     for offset in range(len(item)):
+    #         mask = item[offset].mask.numpy().squeeze()
+    #         vol = item[offset].target.numpy().squeeze()
+    #         plt.imshow(mask[..., 0])
+    #         plt.title(f"Sample {i}, offset {offset}")
+    #         plt.show()
+    #         vol = (vol - vol.min()) / (vol.max() - vol.min())
+    #         vol = np.moveaxis(vol, 0, -1)
+    #         scroll_slices(vol, title=f"Sample {i} Offset {offset}")
+
+    varnet = VarNet4D(1, 1, 1, 1, 1)
+    item = cest_ds.__getitem__(0)
+    # Mask seems erroenous
+    ret = varnet(item.masked_kspace.unsqueeze(0), item.masked_kspace.unsqueeze(0) > 0.5, item.num_low_frequencies)
+    print(ret.shape)
+    

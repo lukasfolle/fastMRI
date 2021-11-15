@@ -166,7 +166,7 @@ def ifft3c_new_offsets(data: torch.Tensor, norm: str = "ortho") -> torch.Tensor:
     if not data.shape[-1] == 2:
         raise ValueError("Tensor does not have separate complex dim.")
     data_i = torch.zeros_like(data)
-    for o in range(data.shape[3]):
+    for o in range(data.shape[2]):
         d = data[:, :, o]
         d = ifftshift(d, dim=[-4, -3, -2])
         d = torch.view_as_real(

@@ -66,7 +66,7 @@ class NormUnet(nn.Module):
     def norm(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         # group norm
         b, c, o, d, h, w = x.shape
-        x = x.view(b, 2, c // 2 * o * d * h * w)
+        x = x.contiguous().view(b, 2, c // 2 * o * d * h * w)
 
         mean = x.mean(dim=2).view(b, 2, 1, 1, 1, 1)
         std = x.std(dim=2).view(b, 2, 1, 1, 1, 1)
@@ -329,5 +329,5 @@ class VarNetBlock(nn.Module):
 if __name__ == "__main__":
     vn = VarNet4D(2, 1, 2, 2, 2)
     # Batch Channel Offsets Depth Height Width
-    ret = vn(torch.rand((1, 8, 32, 4, 64, 64, 2)), torch.rand((1, 8, 32, 4, 64, 64, 2)) > 0.5)
+    ret = vn(torch.rand((1, 8, 16, 4, 64, 64, 2)), torch.rand((1, 8, 16, 4, 64, 64, 2)) > 0.5)
     print(ret.shape)

@@ -544,11 +544,6 @@ class VarNetDataTransformVolume(VarNetDataTransform):
         mask, num_low_frequencies = mask_func(shape, offset, seed)
         mask = mask.squeeze().unsqueeze(0).unsqueeze(2)
         mask = torch.stack((mask, mask), -1)
-        # INFO: Removed padding of mask with zeros.
-        # if padding is not None:
-        #     mask[..., : padding[0]] = 0
-        #     mask[..., padding[1]:] = 0  # padding value inclusive on right of zeros
-
         masked_data = data * mask + 0.0  # the + 0.0 removes the sign of the zeros
 
         return masked_data, mask, num_low_frequencies
@@ -580,6 +575,90 @@ class VarNetDataTransformVolume(VarNetDataTransform):
         """
         if target is not None:
             target_torch = to_tensor(target)
+            max_value = attrs["max"]
+        else:
+            target_torch = torch.tensor(0)
+            max_value = 0.0
+
+        kspace_torch = to_tensor(kspace)
+        seed = None if not self.use_seed else tuple(map(ord, fname))
+        acq_start = attrs["padding_left"]
+        acq_end = attrs["padding_right"]
+
+        crop_size = (attrs["recon_size"][0], attrs["recon_size"][1])
+
+        if self.mask_func is not None:
+            masked_kspace, mask_torch, num_low_frequencies = self.apply_mask(
+                kspace_torch, self.mask_func, seed=seed, padding=(acq_start, acq_end)
+            )
+
+            sample = VarNetSample(
+                masked_kspace=masked_kspace,
+                mask=mask_torch.to(torch.bool),
+                num_low_frequencies=num_low_frequencies,
+                target=target_torch,
+                fname=fname,
+                slice_num=slice_num,
+                max_value=max_value,
+                crop_size=crop_size,
+            )
+        else:
+            masked_kspace = kspace_torch
+            shape = np.array(kspace_torch.shape)
+            num_cols = shape[-2]
+            shape[:-3] = 1
+            mask_shape = [1] * len(shape)
+            mask_shape[-2] = num_cols
+            mask_torch = torch.from_numpy(mask.reshape(*mask_shape).astype(np.float32))
+            mask_torch = mask_torch.reshape(*mask_shape)
+            mask_torch[:, :, :acq_start] = 0
+            mask_torch[:, :, acq_end:] = 0
+
+            sample = VarNetSample(
+                masked_kspace=masked_kspace,
+                mask=mask_torch.to(torch.bool),
+                num_low_frequencies=0,
+                target=target_torch,
+                fname=fname,
+                slice_num=slice_num,
+                max_value=max_value,
+                crop_size=crop_size,
+            )
+
+        return sample
+
+
+class VarNetDataTransformVolume4D(VarNetDataTransform):
+    def apply_mask(self,
+                   data: torch.Tensor,
+                   mask_func: MaskFunc,
+                   offset: Optional[int] = None,
+                   seed: Optional[Union[int, Tuple[int, ...]]] = None,
+                   padding: Optional[Sequence[int]] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor, int]:
+        shape = (1, data.shape[-4], data.shape[-2], data.shape[-1])
+        masks = torch.zeros((data.shape[1], *shape)).squeeze()
+        for offset in range(data.shape[1]):
+            mask, num_low_frequencies = mask_func(shape, offset, seed)
+            mask = torch.stack((mask, mask), -1)
+            masks[offset] = mask.squeeze()
+        masks = masks.unsqueeze(0).unsqueeze(-3)
+        masked_data = data * masks + 0.0  # the + 0.0 removes the sign of the zeros
+
+        return masked_data, masks, num_low_frequencies
+
+    def __call__(
+        self,
+        kspace: np.ndarray,
+        mask: np.ndarray,
+        target: Optional[np.ndarray],
+        attrs: Dict,
+        fname: str,
+        slice_num: int,
+    ) -> VarNetSample:
+
+        if target is not None:
+            target_torch = target
             max_value = attrs["max"]
         else:
             target_torch = torch.tensor(0)
