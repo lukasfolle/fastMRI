@@ -571,7 +571,7 @@ class CESTDataset(VolumeDataset):
                                            os.PathLike] = "/opt/tmp/dataset_cache.pkl",
                  num_cols: Optional[Tuple[int]] = None,
                  cache_path=None,
-                 num_offsets: int = 8):
+                 num_offsets: int = 4):
         super().__init__(root, challenge, transform, use_dataset_cache, sample_rate,
                          volume_sample_rate, dataset_cache_file, num_cols, cache_path)
         self.cest_transform = lambda x, o: x
@@ -581,8 +581,8 @@ class CESTDataset(VolumeDataset):
         return self.cest_transform(volume, offset)
 
     def generate_offset(self, kspace, mask, hf, metadata, fname, offset):
-        num_slices = 20
-        downsampling_factor = 8
+        num_slices = 4
+        downsampling_factor = 2
         x_y_extend = 320 // downsampling_factor
         # rand_first_slice = random.randint(0, kspace.shape[1] - num_slices)
         # rand_last_slice = rand_first_slice + num_slices
@@ -649,7 +649,7 @@ if __name__ == "__main__":
 
     mask = create_mask_for_mask_type("equispaced_fraction_3d", [0.08], [2])
     transform = VarNetDataTransformVolume4D(mask_func=mask, use_seed=False)
-    cest_ds = CESTDataset("/media/lukas/Hard/multicoil_train", "multicoil", transform, use_dataset_cache=False, cache_path="/home/lukas/PycharmProjects/fastMRI/cache_test")
+    cest_ds = CESTDataset("/home/woody/iwi5/iwi5044h/fastMRI/multicoil_train", "multicoil", transform, use_dataset_cache=False, cache_path="/home/woody/iwi5/iwi5044h/Code/fastMRI/cache_test")
     
     # for i in range(len(cest_ds)):
     #     item = cest_ds.__getitem__(i)
@@ -663,10 +663,13 @@ if __name__ == "__main__":
     #         vol = np.moveaxis(vol, 0, -1)
     #         scroll_slices(vol, title=f"Sample {i} Offset {offset}")
 
-    varnet = VarNet4D(4, 4, 1, 1, 1).cuda()
+    varnet = VarNet4D(8, 2, 2, 2, 2).cuda()
     item = cest_ds.__getitem__(0)
-    # Mask seems erroenous
-    ret = varnet(item.masked_kspace.unsqueeze(0).cuda(), (item.masked_kspace.unsqueeze(0) > 0.5).cuda(), item.num_low_frequencies)
+    print(item.masked_kspace.shape)
+    print(item.mask.shape)
+    print(item.target.shape)
+    print(item.num_low_frequencies)
+    ret = varnet(item.masked_kspace.unsqueeze(0).cuda(), item.mask.cuda(), item.num_low_frequencies)
     print(ret.shape)
-    print(f"GB allocated {torch.cuda.max_memory_allocated() / 10**9}")
+    print(f"GPU GB allocated {torch.cuda.max_memory_allocated() / 10**9}")
     
