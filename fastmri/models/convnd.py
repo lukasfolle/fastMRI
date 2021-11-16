@@ -218,9 +218,6 @@ class convNd(nn.Module):
 class ConvTranspose4d(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=0, groups=1, bias=True, padding_mode="zeros", device=None):
         super().__init__()
-        sample = torch.rand(1, 1, 5, 5, 5, 5).to(device)
-        bias = torch.rand(1)[0]
-        weight = torch.rand(1)[0]
         self.conv4d = convNd(
             in_channels=in_channels,
             out_channels=out_channels,
@@ -233,8 +230,8 @@ class ConvTranspose4d(nn.Module):
             is_transposed=True,
             use_bias=bias,
             groups=groups,
-            kernel_initializer=lambda x: torch.nn.init.constant_(sample, weight),
-            bias_initializer=lambda x: torch.nn.init.constant_(sample, bias)
+            kernel_initializer=lambda x: torch.nn.init.kaiming_uniform_(x, nonlinearity="relu"),
+            bias_initializer=lambda x: torch.nn.init.uniform_(x, -1, 1)
         ).to(device)
 
     def forward(self, input):
@@ -244,9 +241,6 @@ class ConvTranspose4d(nn.Module):
 class Conv4d(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=0, groups=1, bias=True, padding_mode="zeros", device=None):
         super().__init__()
-        sample = torch.rand(1, 1, 5, 5, 5, 5).to(device)
-        bias_value = torch.rand(1)[0]
-        weight = torch.rand(1)[0]
         self.conv4d = convNd(
             in_channels=in_channels,
             out_channels=out_channels,
@@ -259,8 +253,8 @@ class Conv4d(nn.Module):
             is_transposed=False,
             use_bias=bias,
             groups=groups,
-            kernel_initializer=lambda x: torch.nn.init.constant_(sample, weight),
-            bias_initializer=lambda x: torch.nn.init.constant_(sample, bias_value)
+            kernel_initializer=lambda x: torch.nn.init.kaiming_uniform_(x, nonlinearity="relu"),
+            bias_initializer=lambda x: torch.nn.init.uniform_(x, -1, 1)
         ).to(device)
 
     def forward(self, input):
@@ -280,9 +274,8 @@ class InstanceNorm4d(_InstanceNorm):
 
 
 if __name__ == "__main__":
-    x = torch.rand(1, 1, 5, 5, 5, 5) * 10 ** 5
-    m = InstanceNorm4d(1)
-    print(m(x).max())
-    # conv = Conv4d(1, 10)
-    # xConv = conv(x)
-    # print(xConv.shape)
+    x = torch.rand(1, 1, 5, 5, 5, 5)
+    conv = Conv4d(1, 1, padding=1)
+    for _ in range(1000):
+        x = conv(x)
+        print(x.max())

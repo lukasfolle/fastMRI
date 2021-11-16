@@ -113,19 +113,15 @@ class NormUnet(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if not x.shape[-1] == 2:
             raise ValueError("Last dimension must be 2 for complex.")
-
         # get shapes for unet and normalize
         x = self.complex_to_chan_dim(x)
         x, mean, std = self.norm(x)
         x, pad_sizes = self.pad(x)
-
         x = self.unet(x)
-
         # get shapes back and unnormalize
         x = self.unpad(x, *pad_sizes)
         x = self.unnorm(x, mean, std)
         x = self.chan_complex_to_last_dim(x)
-
         return x
 
 
@@ -221,9 +217,10 @@ class SensitivityModel(nn.Module):
         images, batches = self.chans_to_batch_dim(fastmri.ifft3c_new_offsets(masked_kspace))
 
         # estimate sensitivities
-        return self.divide_root_sum_of_squares(
+        ret = self.divide_root_sum_of_squares(
             self.batch_chans_to_chan_dim(self.norm_unet(images), batches)
         )
+        return ret
 
 
 class VarNet4D(nn.Module):
@@ -327,7 +324,10 @@ class VarNetBlock(nn.Module):
 
 
 if __name__ == "__main__":
-    vn = VarNet4D(2, 1, 2, 2, 2)
+    vn = VarNet4D(2, 1, 2, 2, 2).cuda()
     # Batch Channel Offsets Depth Height Width
-    ret = vn(torch.rand((1, 8, 16, 4, 64, 64, 2)), torch.rand((1, 8, 16, 4, 64, 64, 2)) > 0.5)
-    print(ret.shape)
+    for _ in range(100):
+        ret = vn(torch.rand((1, 8, 16, 4, 64, 64, 2)).cuda(), torch.rand((1, 8, 16, 4, 64, 64, 2)).cuda() > 0.5)
+        if torch.isnan(ret).any():
+            raise Exception()
+        print(ret.max())
