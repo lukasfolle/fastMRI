@@ -13,7 +13,7 @@ from typing import Callable, Optional, Union
 import fastmri
 import pytorch_lightning as pl
 import torch
-from fastmri.data import CombinedSliceDataset, SliceDataset, VolumeDataset
+from fastmri.data import CombinedSliceDataset, SliceDataset, VolumeDataset, CESTDataset
 
 
 def worker_init_fn(worker_id):
@@ -195,7 +195,7 @@ class FastMriDataModule(pl.LightningDataModule):
                     path = os.path.join(self.cache_dir, "cache_train")
                 else:
                     path = os.path.join(self.cache_dir, "cache_val")
-                dataset = VolumeDataset(
+                dataset = CESTDataset(
                     root=data_path,
                     transform=data_transform,
                     sample_rate=sample_rate,

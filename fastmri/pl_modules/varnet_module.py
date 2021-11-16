@@ -11,7 +11,7 @@ import fastmri
 import torch
 import torch.nn.functional as F
 from fastmri.data import transforms
-from fastmri.models import VarNet, VarNet3D
+from fastmri.models import VarNet, VarNet3D, VarNet4D
 
 from .mri_module import MriModule
 
@@ -90,7 +90,7 @@ class VarNetModule(MriModule):
         self.weight_decay = weight_decay
 
         if volume_training:
-            self.varnet = VarNet3D(
+            self.varnet = VarNet4D(
                 num_cascades=self.num_cascades,
                 sens_chans=self.sens_chans,
                 sens_pools=self.sens_pools,

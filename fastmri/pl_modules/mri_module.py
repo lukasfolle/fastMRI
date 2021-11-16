@@ -112,15 +112,15 @@ class MriModule(pl.LightningModule):
                 target = target / target.max()
                 error = error / error.max()
                 center_slice = target.shape[1] // 2
-                self.log_image(f"{key}/target", target[:, center_slice, ...])
-                self.log_image(f"{key}/reconstruction", output[:, center_slice, ...])
-                self.log_image(f"{key}/error", error[:, center_slice, ...])
+                self.log_image(f"{key}/target", target[:, 2, 2, ...])
+                self.log_image(f"{key}/reconstruction", output[:, 2, 2, ...])
+                self.log_image(f"{key}/error", error[:, 2, 2, ...])
                 if "mask" in val_logs.keys():
                     mask = val_logs["mask"][i]
                     mask = mask / mask.max()
                     if len(mask.squeeze().shape) > 1:
                         mask = mask.squeeze().unsqueeze(0)
-                        mask = mask[..., 0]
+                        mask = mask[:, 2, :, :, 0]
                     else:
                         mask = mask.squeeze()
                         mask = mask.tile((mask.shape[0], 1)).unsqueeze(0)
@@ -146,17 +146,17 @@ class MriModule(pl.LightningModule):
             # ssim_vals[fname][slice_num] = torch.tensor(
             #     evaluate.ssim(target[None, ...], output[None, ...], maxval=maxval)
             # ).view(1)
-            ssim_vals[fname][slice_num] = torch.tensor(
-                evaluate.ssim3D(target[None, ...], output[None, ...])
-            ).view(1)
+            # ssim_vals[fname][slice_num] = torch.tensor(
+            #     evaluate.ssim3D(target[None, ...], output[None, ...])
+            # ).view(1)
 
             max_vals[fname] = maxval
 
-        return {
+            return {
             "val_loss": val_logs["val_loss"],
             "mse_vals": dict(mse_vals),
             "target_norms": dict(target_norms),
-            "ssim_vals": dict(ssim_vals),
+            # "ssim_vals": dict(ssim_vals),
             "max_vals": max_vals,
         }
 
@@ -179,8 +179,8 @@ class MriModule(pl.LightningModule):
                 mse_vals[k].update(val_log["mse_vals"][k])
             for k in val_log["target_norms"].keys():
                 target_norms[k].update(val_log["target_norms"][k])
-            for k in val_log["ssim_vals"].keys():
-                ssim_vals[k].update(val_log["ssim_vals"][k])
+            # for k in val_log["ssim_vals"].keys():
+            #     ssim_vals[k].update(val_log["ssim_vals"][k])
             for k in val_log["max_vals"]:
                 max_vals[k] = val_log["max_vals"][k]
 
@@ -188,12 +188,14 @@ class MriModule(pl.LightningModule):
         assert (
             mse_vals.keys()
             == target_norms.keys()
-            == ssim_vals.keys()
+            # == ssim_vals.keys()
             == max_vals.keys()
         )
 
         # apply means across image volumes
-        metrics = {"nmse": 0, "ssim": 0, "psnr": 0}
+        metrics = {"nmse": 0,
+                #    "ssim": 0,
+                   "psnr": 0}
         local_examples = 0
         for fname in mse_vals.keys():
             local_examples = local_examples + 1
@@ -214,13 +216,13 @@ class MriModule(pl.LightningModule):
                 )
                 - 10 * torch.log10(mse_val)
             )
-            metrics["ssim"] = metrics["ssim"] + torch.mean(
-                torch.cat([v.view(-1) for _, v in ssim_vals[fname].items()])
-            )
+            # metrics["ssim"] = metrics["ssim"] + torch.mean(
+            #     torch.cat([v.view(-1) for _, v in ssim_vals[fname].items()])
+            # )
 
         # reduce across ddp via sum
         metrics["nmse"] = self.NMSE(metrics["nmse"])
-        metrics["ssim"] = self.SSIM(metrics["ssim"])
+        # metrics["ssim"] = self.SSIM(metrics["ssim"])
         metrics["psnr"] = self.PSNR(metrics["psnr"])
         tot_examples = self.TotExamples(torch.tensor(local_examples))
         val_loss = self.ValLoss(torch.sum(torch.cat(losses)))

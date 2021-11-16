@@ -540,7 +540,7 @@ class VolumeDataset(torch.utils.data.Dataset):
 
             # Random slice selection
             num_slices = 10
-            downsampling_factor = 4
+            downsampling_factor = 2
             x_y_extend = 320 // downsampling_factor
             rand_first_slice = random.randint(0, kspace.shape[1] - num_slices)
             rand_last_slice = rand_first_slice + num_slices
