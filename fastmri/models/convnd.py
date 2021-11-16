@@ -133,7 +133,6 @@ class convNd(nn.Module):
             self.conv_layers.append(conv_layer)
 
     def forward(self, input):
-
         # Pad the input if is not transposed convolution
         if not self.is_transposed:
             padding = list(self.padding)
@@ -206,7 +205,6 @@ class convNd(nn.Module):
                     frame_results[out_frame] += frame_conv
 
         result = torch.stack(frame_results, dim=2)
-
         if self.use_bias:
             resultShape = result.shape
             result = result.view(b, resultShape[1], -1)
@@ -247,7 +245,7 @@ class Conv4d(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=0, groups=1, bias=True, padding_mode="zeros", device=None):
         super().__init__()
         sample = torch.rand(1, 1, 5, 5, 5, 5).to(device)
-        bias = torch.rand(1)[0]
+        bias_value = torch.rand(1)[0]
         weight = torch.rand(1)[0]
         self.conv4d = convNd(
             in_channels=in_channels,
@@ -262,11 +260,12 @@ class Conv4d(nn.Module):
             use_bias=bias,
             groups=groups,
             kernel_initializer=lambda x: torch.nn.init.constant_(sample, weight),
-            bias_initializer=lambda x: torch.nn.init.constant_(sample, bias)
+            bias_initializer=lambda x: torch.nn.init.constant_(sample, bias_value)
         ).to(device)
 
     def forward(self, input):
-        return self.conv4d(input)
+        output = self.conv4d(input)
+        return output
 
 
 class InstanceNorm4d(_InstanceNorm):
@@ -274,10 +273,16 @@ class InstanceNorm4d(_InstanceNorm):
         if input.dim() != 6:
             raise ValueError('expected 6D input (got {}D input)'
                              .format(input.dim()))
+    def forward(self, input):
+        ret = super().forward(input)
+        return ret
+        
 
 
 if __name__ == "__main__":
-    x = torch.rand(1, 1, 5, 5, 5, 5)
-    conv = Conv4d(1, 10)
-    xConv = conv(x)
-    print(xConv.shape)
+    x = torch.rand(1, 1, 5, 5, 5, 5) * 10 ** 5
+    m = InstanceNorm4d(1)
+    print(m(x).max())
+    # conv = Conv4d(1, 10)
+    # xConv = conv(x)
+    # print(xConv.shape)
