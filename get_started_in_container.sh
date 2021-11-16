@@ -1,6 +1,7 @@
 #!/bin/bash -l
 #SBATCH --job-name=fastMRI
 #SBATCH --export=NONE
+#SBATCH --time=24:00:00
 #SBATCH --partition=a100
 #SBATCH --gres=gpu:a100:1
 unset SLURM_EXPORT_ENV 

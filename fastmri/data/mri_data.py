@@ -620,8 +620,8 @@ class CESTDataset(VolumeDataset):
                 sample = self.generate_offset(kspace, mask, hf, metadata, fname, o)
                 samples.append(sample)
 
-        kspace = torch.swapaxes(torch.tensor([s[0] for s in samples]), 0, 1)
-        target = torch.tensor([s[2] for s in samples])
+        kspace = torch.swapaxes(torch.tensor(np.array([s[0] for s in samples])), 0, 1)
+        target = torch.tensor(np.array([s[2] for s in samples]))
         return (kspace, mask, target, sample[3], fname.name, -1)
     
     def get_cache(self, i: int):
