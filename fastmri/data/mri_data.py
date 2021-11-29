@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
 from warnings import warn
 import pickle
+from copy import deepcopy
 
 import fastmri
 from fastmri.data import transforms
@@ -571,7 +572,7 @@ class CESTDataset(VolumeDataset):
                                            os.PathLike] = "/opt/tmp/dataset_cache.pkl",
                  num_cols: Optional[Tuple[int]] = None,
                  cache_path=None,
-                 num_offsets: int = 4):
+                 num_offsets: int = 8):
         super().__init__(root, challenge, transform, use_dataset_cache, sample_rate,
                          volume_sample_rate, dataset_cache_file, num_cols, cache_path)
         self.cest_transform = lambda x, o: x
@@ -580,13 +581,13 @@ class CESTDataset(VolumeDataset):
     def apply_virtual_cest_contrast(self, kspace, target, offset: int):
         # self.cest_transform(volume, offset)
         random_num = np.random.rand() + 1e-6
-        kspace *= random_num
-        target *= random_num
+        kspace = deepcopy(kspace) * random_num
+        target = deepcopy(target) * random_num
         return kspace, target
 
     def generate_offset(self, kspace, mask, hf, metadata, fname, offset):
         num_slices = 4
-        downsampling_factor = 2
+        downsampling_factor = 4
         x_y_extend = 320 // downsampling_factor
         # rand_first_slice = random.randint(0, kspace.shape[1] - num_slices)
         # rand_last_slice = rand_first_slice + num_slices
