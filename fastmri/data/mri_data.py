@@ -577,8 +577,12 @@ class CESTDataset(VolumeDataset):
         self.cest_transform = lambda x, o: x
         self.num_offsets = num_offsets
 
-    def apply_virtual_cest_contrast(self, volume, offset: int):
-        return self.cest_transform(volume, offset)
+    def apply_virtual_cest_contrast(self, kspace, target, offset: int):
+        # self.cest_transform(volume, offset)
+        random_num = np.random.rand() + 1e-6
+        kspace *= random_num
+        target *= random_num
+        return kspace, target
 
     def generate_offset(self, kspace, mask, hf, metadata, fname, offset):
         num_slices = 4
@@ -596,7 +600,7 @@ class CESTDataset(VolumeDataset):
         attrs = dict(hf.attrs)
         attrs.update(metadata)
 
-        target = self.apply_virtual_cest_contrast(target, offset)
+        kspace, target = self.apply_virtual_cest_contrast(kspace, target, offset)
 
         sample = (kspace, mask, target, attrs, fname.name, -1)
         return sample
@@ -649,27 +653,32 @@ if __name__ == "__main__":
 
     mask = create_mask_for_mask_type("equispaced_fraction_3d", [0.08], [2])
     transform = VarNetDataTransformVolume4D(mask_func=mask, use_seed=False)
-    cest_ds = CESTDataset("/home/woody/iwi5/iwi5044h/fastMRI/multicoil_train", "multicoil", transform, use_dataset_cache=False, cache_path="/home/woody/iwi5/iwi5044h/Code/fastMRI/cache_test")
+    # cest_ds = CESTDataset("/home/woody/iwi5/iwi5044h/fastMRI/multicoil_train", "multicoil", transform, use_dataset_cache=False, cache_path="/home/woody/iwi5/iwi5044h/Code/fastMRI/cache_test")
+    cest_ds = CESTDataset("/media/lukas/Hard/multicoil_train", "multicoil", transform, use_dataset_cache=False, cache_path="/media/lukas/Hard/cache_test")
     
-    # for i in range(len(cest_ds)):
-    #     item = cest_ds.__getitem__(i)
-    #     for offset in range(len(item)):
-    #         mask = item[offset].mask.numpy().squeeze()
-    #         vol = item[offset].target.numpy().squeeze()
-    #         plt.imshow(mask[..., 0])
-    #         plt.title(f"Sample {i}, offset {offset}")
-    #         plt.show()
-    #         vol = (vol - vol.min()) / (vol.max() - vol.min())
-    #         vol = np.moveaxis(vol, 0, -1)
-    #         scroll_slices(vol, title=f"Sample {i} Offset {offset}")
+    for i in range(len(cest_ds)):
+        item = cest_ds.__getitem__(i)
+        print(f"\n\nItem {i}")
+        for offset in range(item.target.shape[0]):
 
-    varnet = VarNet4D(4, 2, 2, 2, 2).cuda()
-    item = cest_ds.__getitem__(0)
-    print(item.masked_kspace.shape)
-    print(item.mask.shape)
-    print(item.target.shape)
-    print(item.num_low_frequencies)
-    ret = varnet(item.masked_kspace.unsqueeze(0).cuda(), item.mask.cuda(), item.num_low_frequencies)
-    print(ret.shape)
-    print(f"GPU GB allocated {torch.cuda.max_memory_allocated() / 10**9}")
+            mask = item.mask[:, offset].numpy().squeeze()
+            vol = item.target[offset].numpy().squeeze()
+            # plt.imshow(mask[..., 0])
+            # plt.title(f"Sample {i}, offset {offset}")
+            # plt.show()
+            vol = (vol - vol.min()) / (vol.max() - vol.min())
+            vol = np.moveaxis(vol, 0, -1)
+            # scroll_slices(vol, title=f"Sample {i} Offset {offset}")
+            print(f"Mean target: {np.mean(vol):.3g} Mean kspace {np.mean(item.masked_kspace[offset].numpy().squeeze()):.3g}")
+
+    # varnet = VarNet4D(8, 2, 2, 2, 2).cuda()
+    # item = cest_ds.__getitem__(0)
+    # print(item.masked_kspace.shape)
+    # print(item.mask.shape)
+    # print(item.target.shape)
+    # print(item.num_low_frequencies)
+    # ret = varnet(item.masked_kspace.unsqueeze(0).cuda(), item.mask.cuda(), item.num_low_frequencies)
+    # print(ret.shape)
+    # print(f"GPU GB allocated {torch.cuda.max_memory_allocated() / 10**9}")
+    
     
