@@ -195,7 +195,7 @@ class SensitivityModel(nn.Module):
                 mask.shape[0], dtype=mask.dtype, device=mask.device
             )
 
-        pad = (mask.shape[-2] - num_low_frequencies_tensor + 1) // 2
+        pad = torch.div((mask.shape[-2] - num_low_frequencies_tensor + 1), 2, rounding_mode="floor")
 
         return pad, num_low_frequencies_tensor
 
@@ -327,7 +327,7 @@ if __name__ == "__main__":
     vn = VarNet4D(2, 1, 2, 2, 2).cuda()
     # Batch Channel Offsets Depth Height Width
     for _ in range(100):
-        ret = vn(torch.rand((1, 8, 16, 4, 64, 64, 2)).cuda(), torch.rand((1, 8, 16, 4, 64, 64, 2)).cuda() > 0.5)
+        ret = vn(torch.rand((1, 15, 4, 4, 320, 180, 2)).cuda(), torch.rand((1, 15, 4, 4, 320, 180, 2)).cuda() > 0.5)
         if torch.isnan(ret).any():
             raise Exception()
         print(ret.max())

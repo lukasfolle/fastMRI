@@ -663,7 +663,7 @@ if __name__ == "__main__":
     #         vol = np.moveaxis(vol, 0, -1)
     #         scroll_slices(vol, title=f"Sample {i} Offset {offset}")
 
-    varnet = VarNet4D(8, 2, 2, 2, 2).cuda()
+    varnet = VarNet4D(4, 2, 2, 2, 2).cuda()
     item = cest_ds.__getitem__(0)
     print(item.masked_kspace.shape)
     print(item.mask.shape)

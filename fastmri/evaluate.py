@@ -21,7 +21,8 @@ from fastmri.data import transforms
 
 def mse(gt: np.ndarray, pred: np.ndarray) -> np.ndarray:
     """Compute Mean Squared Error (MSE)"""
-
+    gt = (gt - gt.min()) / (gt.max() - gt.min())
+    pred = (pred - pred.min()) / (pred.max() - pred.min())
     return np.mean((gt - pred) ** 2)
 
 

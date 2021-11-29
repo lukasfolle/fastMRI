@@ -88,8 +88,6 @@ def build_args():
     backend = None  # "ddp"  # "ddp"  # "ddp"
     num_gpus = 1 if backend == "ddp" else 1
     batch_size = num_gpus
-    # volume_training = True
-    # use_cache_dataset = False
 
     # set defaults based on optional directory config
     data_path = fetch_dir("knee_path", path_config)
@@ -137,7 +135,7 @@ def build_args():
     # module config
     parser = VarNetModule.add_model_specific_args(parser)
     parser.set_defaults(
-        num_cascades=8,  # number of unrolled iterations
+        num_cascades=2,  # number of unrolled iterations
         pools=2,  # number of pooling layers for U-Net
         chans=2,  # number of top-level channels for U-Net
         sens_pools=2,  # number of pooling layers for sense est. U-Net
@@ -158,7 +156,7 @@ def build_args():
         deterministic=False,  # makes things slower, but deterministic
         default_root_dir=default_root_dir,  # directory for logs and checkpoints
         max_epochs=1000,  # max number of epochs
-        num_workers=0,
+        num_workers=16,
         # overfit_batches=1,
         log_every_n_steps=50
     )
@@ -177,7 +175,7 @@ def build_args():
             verbose=True,
             monitor="validation_loss",
             mode="min",
-        )
+        ),
     ]
 
     # set default checkpoint if one exists in our checkpoint directory
