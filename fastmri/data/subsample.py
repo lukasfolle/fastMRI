@@ -490,13 +490,15 @@ class EquispacedMaskFractionFunc3D(MaskFunc3D):
             num_low_frequencies * acceleration - shape[-2]
         )
         mask = np.zeros((shape[-3], shape[-2]))
-        for slice_idx in range(shape[-3]):
-            if offset is None:
-                offset = self.rng.randint(0, high=round(adjusted_accel_col))
-            accel_samples_col = np.arange(offset, shape[-2] - 1, adjusted_accel_col)
-            accel_samples_col = np.around(accel_samples_col).astype(np.uint)
-            mask[slice_idx, accel_samples_col] = 1.0
-
+        # for slice_idx in range(shape[-3]):
+        #     if offset is None:
+        #         offset = self.rng.randint(0, high=round(adjusted_accel_col))
+        #     accel_samples_col = np.arange(offset, shape[-2] - 1, adjusted_accel_col)
+        #     accel_samples_col = np.around(accel_samples_col).astype(np.uint)
+        #     mask[slice_idx, accel_samples_col] = 1.0
+        mask_offset = self.rng.randint(0, 2)
+        phase_offset = self.rng.randint(0, 3)
+        mask[mask_offset::2, phase_offset::3] = 1.0
         return mask
 
 

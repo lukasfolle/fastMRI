@@ -254,12 +254,12 @@ class VarNet4D(nn.Module):
                 calculation.
         """
         super().__init__()
-
-        self.sens_net = SensitivityModel(
-            chans=sens_chans,
-            num_pools=sens_pools,
-            mask_center=mask_center,
-        )
+        print("Sensitivity model disabled.")
+        # self.sens_net = SensitivityModel(
+        #     chans=sens_chans,
+        #     num_pools=sens_pools,
+        #     mask_center=mask_center,
+        # )
         self.cascades = nn.ModuleList(
             [VarNetBlock(NormUnet(chans, pools)) for _ in range(num_cascades)]
         )
@@ -270,7 +270,8 @@ class VarNet4D(nn.Module):
         mask: torch.Tensor,
         num_low_frequencies: Optional[int] = None,
     ) -> torch.Tensor:
-        sens_maps = self.sens_net(masked_kspace, mask, num_low_frequencies)
+        # sens_maps = self.sens_net(masked_kspace, mask, num_low_frequencies)
+        sens_maps = torch.ones_like(masked_kspace)
         kspace_pred = masked_kspace.clone()
 
         for cascade in self.cascades:

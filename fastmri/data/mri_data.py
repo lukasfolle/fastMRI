@@ -663,12 +663,12 @@ if __name__ == "__main__":
 
             mask = item.mask[:, offset].numpy().squeeze()
             vol = item.target[offset].numpy().squeeze()
-            # plt.imshow(mask[..., 0])
-            # plt.title(f"Sample {i}, offset {offset}")
-            # plt.show()
+            plt.imshow(mask[..., 0])
+            plt.title(f"Sample {i}, offset {offset}")
+            plt.show()
             vol = (vol - vol.min()) / (vol.max() - vol.min())
             vol = np.moveaxis(vol, 0, -1)
-            # scroll_slices(vol, title=f"Sample {i} Offset {offset}")
+            scroll_slices(vol, title=f"Sample {i} Offset {offset}")
             print(f"Mean target: {np.mean(vol):.3g} Mean kspace {np.mean(item.masked_kspace[offset].numpy().squeeze()):.3g}")
 
     # varnet = VarNet4D(8, 2, 2, 2, 2).cuda()
