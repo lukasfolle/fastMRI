@@ -73,7 +73,8 @@ class NormUnet(nn.Module):
 
         x = x.view(b, c, o, d, h, w)
 
-        return (x - mean) / std, mean, std
+        res = (x - mean) / (std + 1e-5), mean, std + 1e-5
+        return res
 
     def unnorm(
         self, x: torch.Tensor, mean: torch.Tensor, std: torch.Tensor
@@ -117,11 +118,13 @@ class NormUnet(nn.Module):
         x = self.complex_to_chan_dim(x)
         x, mean, std = self.norm(x)
         x, pad_sizes = self.pad(x)
-        x = self.unet(x)
+        x_pre = x
+        x = self.unet(x_pre)
         # get shapes back and unnormalize
         x = self.unpad(x, *pad_sizes)
         x = self.unnorm(x, mean, std)
         x = self.chan_complex_to_last_dim(x)
+
         return x
 
 
@@ -212,10 +215,12 @@ class SensitivityModel(nn.Module):
             masked_kspace = transforms.batched_mask_center(
                 masked_kspace, pad, pad + num_low_freqs
             )
-
+        if torch.isnan(masked_kspace).any():
+            print()
         # convert to image space
         images, batches = self.chans_to_batch_dim(fastmri.ifft3c_new_offsets(masked_kspace))
-
+        if torch.isnan(images).any():
+            print()
         # estimate sensitivities
         ret = self.divide_root_sum_of_squares(
             self.batch_chans_to_chan_dim(self.norm_unet(images), batches)
@@ -254,12 +259,12 @@ class VarNet4D(nn.Module):
                 calculation.
         """
         super().__init__()
-        print("Sensitivity model disabled.")
-        # self.sens_net = SensitivityModel(
-        #     chans=sens_chans,
-        #     num_pools=sens_pools,
-        #     mask_center=mask_center,
-        # )
+        # print("Sensitivity model disabled.")
+        self.sens_net = SensitivityModel(
+            chans=sens_chans,
+            num_pools=sens_pools,
+            mask_center=mask_center,
+        )
         self.cascades = nn.ModuleList(
             [VarNetBlock(NormUnet(chans, pools)) for _ in range(num_cascades)]
         )
@@ -270,8 +275,8 @@ class VarNet4D(nn.Module):
         mask: torch.Tensor,
         num_low_frequencies: Optional[int] = None,
     ) -> torch.Tensor:
-        # sens_maps = self.sens_net(masked_kspace, mask, num_low_frequencies)
-        sens_maps = torch.ones_like(masked_kspace)
+        sens_maps = self.sens_net(masked_kspace, mask, num_low_frequencies)
+        # sens_maps = torch.ones_like(masked_kspace)
         kspace_pred = masked_kspace.clone()
 
         for cascade in self.cascades:

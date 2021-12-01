@@ -13,7 +13,7 @@ from typing import Optional
 import h5py
 import numpy as np
 from runstats import Statistics
-from skimage.metrics import peak_signal_noise_ratio, structural_similarity
+from skimage.metrics import peak_signal_noise_ratio, structural_similarity, normalized_root_mse
 from fastmri.losses import ssim3D
 
 from fastmri.data import transforms
@@ -22,15 +22,15 @@ from fastmri.data import transforms
 def mse(gt: np.ndarray, pred: np.ndarray) -> np.ndarray:
     """Compute Mean Squared Error (MSE)"""
     gt = (gt - gt.min()) / (gt.max() - gt.min())
-    pred = (pred - pred.min()) / (pred.max() - pred.min())
+    pred = (pred - pred.min()) / (pred.max() - pred.min() + 1e-6)
     return np.mean((gt - pred) ** 2)
 
 
 def nmse(gt: np.ndarray, pred: np.ndarray) -> np.ndarray:
     """Compute Normalized Mean Squared Error (NMSE)"""
-    gt = (gt - gt.min()) / (gt.max() - gt.min())
-    pred = (pred - pred.min()) / (pred.max() - pred.min())
-    return np.linalg.norm(gt - pred) ** 2 / np.linalg.norm(gt) ** 2
+    # gt = (gt - gt.min()) / (gt.max() - gt.min())
+    # pred = (pred - pred.min()) / (pred.max() - pred.min())
+    return normalized_root_mse(gt, pred)  # np.linalg.norm(gt - pred) ** 2 / np.linalg.norm(gt) ** 2
 
 
 def psnr(
@@ -42,7 +42,7 @@ def psnr(
     maxval = None
     if maxval is None:
         maxval = gt.max()
-    return peak_signal_noise_ratio(gt, pred, data_range=maxval)
+    return np.abs(peak_signal_noise_ratio(gt, pred, data_range=maxval))
 
 
 def ssim(

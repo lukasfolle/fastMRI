@@ -575,12 +575,12 @@ class CESTDataset(VolumeDataset):
                  num_offsets: int = 8):
         super().__init__(root, challenge, transform, use_dataset_cache, sample_rate,
                          volume_sample_rate, dataset_cache_file, num_cols, cache_path)
-        self.cest_transform = lambda x, o: x
+        # self.cest_transform = lambda x, o: x
         self.num_offsets = num_offsets
 
     def apply_virtual_cest_contrast(self, kspace, target, offset: int):
         # self.cest_transform(volume, offset)
-        random_num = np.random.rand() + 1e-6
+        random_num = 10 * np.random.rand() + 1e4
         kspace = deepcopy(kspace) * random_num
         target = deepcopy(target) * random_num
         return kspace, target
@@ -613,7 +613,6 @@ class CESTDataset(VolumeDataset):
             fname, metadata = self.examples[i]
 
         samples = []
-        
 
         with h5py.File(fname, "r") as hf:
             kspace = np.asarray(hf["kspace"])
@@ -655,7 +654,8 @@ if __name__ == "__main__":
     mask = create_mask_for_mask_type("equispaced_fraction_3d", [0.08], [2])
     transform = VarNetDataTransformVolume4D(mask_func=mask, use_seed=False)
     # cest_ds = CESTDataset("/home/woody/iwi5/iwi5044h/fastMRI/multicoil_train", "multicoil", transform, use_dataset_cache=False, cache_path="/home/woody/iwi5/iwi5044h/Code/fastMRI/cache_test")
-    cest_ds = CESTDataset("/media/lukas/Hard/multicoil_train", "multicoil", transform, use_dataset_cache=False, cache_path="/media/lukas/Hard/cache_test")
+    cest_ds = CESTDataset(r"E:\Lukas\multicoil_train", "multicoil", transform, use_dataset_cache=False,
+                          cache_path=r"E:\Lukas\cache_test")
     
     for i in range(len(cest_ds)):
         item = cest_ds.__getitem__(i)
@@ -664,12 +664,12 @@ if __name__ == "__main__":
 
             mask = item.mask[:, offset].numpy().squeeze()
             vol = item.target[offset].numpy().squeeze()
-            plt.imshow(mask[..., 0])
-            plt.title(f"Sample {i}, offset {offset}")
-            plt.show()
-            vol = (vol - vol.min()) / (vol.max() - vol.min())
-            vol = np.moveaxis(vol, 0, -1)
-            scroll_slices(vol, title=f"Sample {i} Offset {offset}")
+            # plt.imshow(mask[..., 0])
+            # plt.title(f"Sample {i}, offset {offset}")
+            # plt.show()
+            # vol = (vol - vol.min()) / (vol.max() - vol.min())
+            # vol = np.moveaxis(vol, 0, -1)
+            # scroll_slices(vol, title=f"Sample {i} Offset {offset}")
             print(f"Mean target: {np.mean(vol):.3g} Mean kspace {np.mean(item.masked_kspace[offset].numpy().squeeze()):.3g}")
 
     # varnet = VarNet4D(8, 2, 2, 2, 2).cuda()

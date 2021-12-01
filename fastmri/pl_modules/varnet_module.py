@@ -16,12 +16,6 @@ from fastmri.models import VarNet, VarNet3D, VarNet4D
 from .mri_module import MriModule
 
 
-def mse_mod(x, y, data_range):
-    x = (x - x.min()) / (x.max() - x.min())
-    y = (y - y.min()) / (y.max() - y.min())
-    return F.mse_loss(x, y)
-
-
 class VarNetModule(MriModule):
     """
     VarNet training module.
@@ -108,8 +102,7 @@ class VarNetModule(MriModule):
 
         if volume_training:
             print("Using MSELoss")
-            self.loss = mse_mod
-            # self.loss = fastmri.SSIM3DLoss()
+            self.loss = torch.nn.MSELoss()
         else:
             self.loss = fastmri.SSIMLoss()
 
@@ -121,9 +114,8 @@ class VarNetModule(MriModule):
 
         target, output = transforms.center_crop_to_smallest(batch.target, output)
         loss = self.loss(
-            output.unsqueeze(1), target.unsqueeze(1), data_range=batch.max_value
+            output.unsqueeze(1), target.unsqueeze(1),  # data_range=batch.max_value
         )
-
         self.log("train_loss", loss)
 
         return loss
@@ -133,7 +125,10 @@ class VarNetModule(MriModule):
             batch.masked_kspace, batch.mask, batch.num_low_frequencies
         )
         target, output = transforms.center_crop_to_smallest(batch.target, output)
-
+        loss = self.loss(
+            output.unsqueeze(1), target.unsqueeze(1),  # data_range=batch.max_value
+        )
+        self.log("validation_loss", loss)
         return {
             "batch_idx": batch_idx,
             "fname": batch.fname,
@@ -142,9 +137,7 @@ class VarNetModule(MriModule):
             "output": output,
             "mask": batch.mask,
             "target": target,
-            "val_loss": self.loss(
-                output.unsqueeze(1), target.unsqueeze(1), data_range=batch.max_value
-            ),
+            "val_loss": loss
         }
 
     def test_step(self, batch, batch_idx):

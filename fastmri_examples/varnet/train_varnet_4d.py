@@ -127,7 +127,7 @@ def build_args():
 
     parser.add_argument(
         "--cache_dir",
-        default="/home/woody/iwi5/iwi5044h/fastMRI/cache",
+        default=r"C:\Users\follels\Documents\fastMRI\cache",#"/home/woody/iwi5/iwi5044h/fastMRI/cache",
         type=str,
         help="Folder to save cache to",
     )
@@ -135,10 +135,10 @@ def build_args():
     # module config
     parser = VarNetModule.add_model_specific_args(parser)
     parser.set_defaults(
-        num_cascades=2,  # number of unrolled iterations
+        num_cascades=4,  # number of unrolled iterations
         pools=2,  # number of pooling layers for U-Net
-        chans=2,  # number of top-level channels for U-Net
-        sens_pools=2,  # number of pooling layers for sense est. U-Net
+        chans=4,  # number of top-level channels for U-Net
+        sens_pools=3,  # number of pooling layers for sense est. U-Net
         sens_chans=2,  # number of top-level channels for sense est. U-Net
         lr=0.001,  # Adam learning rate
         lr_step_size=100000,  # epoch at which to decrease learning rate
@@ -156,9 +156,9 @@ def build_args():
         deterministic=False,  # makes things slower, but deterministic
         default_root_dir=default_root_dir,  # directory for logs and checkpoints
         max_epochs=1000,  # max number of epochs
-        num_workers=16,
+        num_workers=4,
         # overfit_batches=1,
-        log_every_n_steps=50
+        log_every_n_steps=10,
     )
 
     args = parser.parse_args()
