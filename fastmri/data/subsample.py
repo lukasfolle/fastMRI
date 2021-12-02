@@ -246,12 +246,12 @@ class MaskFunc3D(MaskFunc):
         num_cols = shape[-2]
         center_fraction, acceleration = self.choose_acceleration()
         num_low_frequencies = round(num_cols * center_fraction)
-        center_mask = self.reshape_mask(
-            self.calculate_center_mask(shape, num_low_frequencies), shape
-        )
-
-        center_mask = torch.tile(center_mask.squeeze(), (shape[-3], 1)).reshape((1, 1, shape[-3], shape[-2], 1))
-        center_mask[:, :, slice_direction_drop] = 0
+        # center_mask = self.reshape_mask(
+        #     self.calculate_center_mask(shape, num_low_frequencies), shape
+        # )
+        #
+        # center_mask = torch.tile(center_mask.squeeze(), (shape[-3], 1)).reshape((1, 1, shape[-3], shape[-2], 1))
+        # center_mask[:, :, slice_direction_drop] = 0
 
         acceleration_mask = self.reshape_mask(
             self.calculate_acceleration_mask_3D(
@@ -259,6 +259,7 @@ class MaskFunc3D(MaskFunc):
             ),
             shape
         )
+        center_mask = torch.zeros_like(acceleration_mask)
 
         return center_mask, acceleration_mask, num_low_frequencies
 

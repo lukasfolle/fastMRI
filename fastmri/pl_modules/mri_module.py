@@ -90,6 +90,7 @@ class MriModule(pl.LightningModule):
         prediction = (prediction - prediction.min()) / (prediction.max() - prediction.min() + 1e-6)
         self.log("val_metrics/psnr", peak_signal_noise_ratio(target, prediction))
         self.log("val_metrics/nrmse", normalized_root_mse(target, prediction))
+        self.log("val_metrics/ssim", structural_similarity(target.squeeze(), prediction.squeeze()))
 
         if val_logs["output"].ndim == 2:
             val_logs["output"] = val_logs["output"].unsqueeze(0)
