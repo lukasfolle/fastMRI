@@ -9,7 +9,6 @@ import contextlib
 from typing import Optional, Sequence, Tuple, Union
 
 import numpy as np
-from scipy.stats import norm
 import torch
 
 
@@ -234,7 +233,7 @@ class MaskFunc3D(MaskFunc):
 
         def gaussian(x, mu, sig):
             return np.exp(-np.power(x - mu, 2.) / (2 * np.power(sig, 2.)))
-        
+
         pdf = 1 - np.array([gaussian(s - shape[1] // 2, 0, 5) for s in range(shape[1])])
         central_slices_start = int(shape[1] / 2 - shape[1] * 0.1)
         central_slices_end = int(shape[1] / 2 + shape[1] * 0.1)
@@ -260,7 +259,8 @@ class MaskFunc3D(MaskFunc):
             shape
         )
         center_mask = torch.zeros_like(acceleration_mask)
-
+        center_mask[:, center_mask.shape[1] // 2 - 1:center_mask.shape[1] // 2 + 1,
+                    center_mask.shape[2] // 2 - 1:center_mask.shape[2] // 2 + 1] = 1.0
         return center_mask, acceleration_mask, num_low_frequencies
 
     def reshape_mask(self, mask: np.ndarray, shape: Sequence[int]) -> torch.Tensor:
