@@ -14,7 +14,7 @@ import h5py
 import numpy as np
 from runstats import Statistics
 from skimage.metrics import peak_signal_noise_ratio, structural_similarity, normalized_root_mse
-from fastmri.losses import ssim3D
+from fastmri.losses import ssim3D_loss
 
 from fastmri.data import transforms
 

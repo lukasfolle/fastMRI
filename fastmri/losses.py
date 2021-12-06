@@ -202,7 +202,7 @@ def ssim(img1, img2, window_size=11, size_average=True):
     return _ssim(img1, img2, window, window_size, channel, size_average)
 
 
-def ssim3D(img1, img2, window_size=3, size_average=True):
+def ssim3D_loss(img1, img2, window_size=3, size_average=True):
     channel = img1.shape[1]
     window = create_window_3D(window_size, channel)
 
@@ -216,7 +216,7 @@ def ssim3D(img1, img2, window_size=3, size_average=True):
             img2_slice = (img2[:, :, i] - img2[:, :, i].min()) / (img2[:, :, i].max() - img2[:, :, i].min())
 
             ssim_average = ssim_average + _ssim_3D(img1_slice, img2_slice, window, window_size, channel, size_average)
-        return ssim_average / img1.shape[2]
+        return 1 - ssim_average / img1.shape[2]
     else:
         img1 = (img1 - img1.min()) / (img1.max() - img1.min())
         img2 = (img2 - img2.min()) / (img2.max() - img2.min())
