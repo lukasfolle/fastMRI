@@ -202,17 +202,23 @@ def ssim(img1, img2, window_size=11, size_average=True):
     return _ssim(img1, img2, window, window_size, channel, size_average)
 
 
-def ssim3D(img1, img2, window_size=11, size_average=True):
-    img1 = torch.from_numpy(img1[:, None, ...])
-    img2 = torch.from_numpy(img2[:, None, ...])
-    (_, channel, _, _, _) = img1.size()
+def ssim3D(img1, img2, window_size=3, size_average=True):
+    channel = img1.shape[1]
     window = create_window_3D(window_size, channel)
 
     if img1.is_cuda:
         window = window.cuda(img1.get_device())
     window = window.type_as(img1)
+    if len(img1.shape) > 5:
+        ssim_average = torch.tensor(0, device=img1.device)
+        for i in range(img1.shape[2]):
+            img1_slice = (img1[:, :, i] - img1[:, :, i].min()) / (img1[:, :, i].max() - img1[:, :, i].min())
+            img2_slice = (img2[:, :, i] - img2[:, :, i].min()) / (img2[:, :, i].max() - img2[:, :, i].min())
 
-    img1 = (img1 - img1.min()) / (img1.max() - img1.min())
-    img2 = (img2 - img2.min()) / (img2.max() - img2.min())
+            ssim_average = ssim_average + _ssim_3D(img1_slice, img2_slice, window, window_size, channel, size_average)
+        return ssim_average / img1.shape[2]
+    else:
+        img1 = (img1 - img1.min()) / (img1.max() - img1.min())
+        img2 = (img2 - img2.min()) / (img2.max() - img2.min())
 
-    return _ssim_3D(img1, img2, window, window_size, channel, size_average).numpy()
+        return _ssim_3D(img1, img2, window, window_size, channel, size_average).numpy()
