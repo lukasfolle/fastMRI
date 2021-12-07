@@ -12,7 +12,7 @@ import torch
 import torch.nn.functional as F
 from fastmri.data import transforms
 from fastmri.models import VarNet, VarNet3D, VarNet4D
-from fastmri.losses import ssim3D_loss
+from fastmri.losses import ssim3D_loss, combined_loss
 
 from .mri_module import MriModule
 
@@ -102,8 +102,8 @@ class VarNetModule(MriModule):
             )
 
         if volume_training:
-            print("Using SSIM loss")
-            self.loss = ssim3D_loss  # torch.nn.MSELoss()
+            print("Using combined loss")
+            self.loss = combined_loss  # torch.nn.MSELoss()
         else:
             self.loss = fastmri.SSIMLoss()
 
