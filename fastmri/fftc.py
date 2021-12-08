@@ -174,6 +174,7 @@ def ifft3c_new_offsets(data: torch.Tensor, norm: str = "ortho") -> torch.Tensor:
                 torch.view_as_complex(d), dim=(-3, -2, -1), norm=norm
             )
         )
+        d = fftshift(d, dim=[-4, -3, 2])
         data_i[:, :, o] = d
 
     return data_i

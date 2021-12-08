@@ -10,6 +10,7 @@ from typing import Optional, Sequence, Tuple, Union
 
 import numpy as np
 import torch
+from skimage.transform import resize
 
 
 @contextlib.contextmanager
@@ -463,6 +464,12 @@ class EquispacedMaskFractionFunc(MaskFunc):
 
 
 class EquispacedMaskFractionFunc3D(MaskFunc3D):
+    def __init__(self, center_fractions, accelerations, allow_any_combination=False, seed=None):
+        super().__init__(center_fractions, accelerations, allow_any_combination, seed)
+        self.eliptical_mask = np.load(
+            r"C:\Users\follels\Documents\fastMRI\fastmri\data\kspace_eliptical_mask.npy"
+        ).astype(float)
+
     def calculate_acceleration_mask_3D(
         self,
         num_cols: int,
@@ -485,6 +492,7 @@ class EquispacedMaskFractionFunc3D(MaskFunc3D):
         Returns:
             A mask for the high spatial frequencies of k-space.
         """
+        eliptial_mask = resize(self.eliptical_mask, output_shape=(shape[-3], shape[-2]), order=1) > 0.5
 
         # determine acceleration rate by adjusting for the number of low frequencies
         adjusted_accel_col = (acceleration * (num_low_frequencies - shape[-2])) / (
@@ -500,6 +508,7 @@ class EquispacedMaskFractionFunc3D(MaskFunc3D):
         mask_offset = self.rng.randint(0, 2)
         phase_offset = self.rng.randint(0, 3)
         mask[mask_offset::2, phase_offset::3] = 1.0
+        mask = mask * eliptial_mask
         return mask
 
 
