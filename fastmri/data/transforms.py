@@ -664,7 +664,7 @@ class VarNetDataTransformVolume4D(VarNetDataTransform):
             target_torch = torch.tensor(0)
             max_value = 0.0
 
-        kspace_torch = to_tensor(kspace)
+        kspace_torch = kspace  # to_tensor(kspace)
         seed = None if not self.use_seed else tuple(map(ord, fname))
         acq_start = attrs["padding_left"]
         acq_end = attrs["padding_right"]

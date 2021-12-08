@@ -16,6 +16,7 @@ import torch
 from .coil_combine import rss, rss_complex
 from .fftc import fft2c_new as fft2c
 from .fftc import ifft3c_new as fft3c
+from .fftc import fft1c_new as fft1c
 from .fftc import fft3c_new_offsets
 from .fftc import fftshift
 from .fftc import ifft2c_new as ifft2c

@@ -11,6 +11,32 @@ import torch
 import torch.fft
 
 
+def fft1c_new(data: torch.Tensor, norm: str = "ortho", dim=-4) -> torch.Tensor:
+    """
+    Apply centered 2-dimensional Inverse Fast Fourier Transform.
+
+    Args:
+        data: Complex valued input data containing
+        norm: Normalization mode. See ``torch.fft.ifft``.
+        dim: Dimension to transform
+
+    Returns:
+        The IFFT of the input.
+    """
+    if not data.shape[-1] == 2:
+        raise ValueError("Tensor does not have separate complex dim.")
+
+    data = fftshift(data, dim=[dim])
+    data = torch.view_as_real(
+        torch.fft.fftn(  # type: ignore
+            torch.view_as_complex(data), dim=(dim + 1), norm=norm
+        )
+    )
+    data = ifftshift(data, dim=[dim])
+
+    return data
+
+
 def fft2c_new(data: torch.Tensor, norm: str = "ortho") -> torch.Tensor:
     """
     Apply centered 2 dimensional Fast Fourier Transform.

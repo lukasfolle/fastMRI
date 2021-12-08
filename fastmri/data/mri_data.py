@@ -478,34 +478,25 @@ class VolumeDataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.examples)
 
-    def reco(self, kspace, down_sampling_factor):
+    def reco(self, kspace, down_sampling_factor, z_extend=None):
         k_space_downsampled = kspace
+        kspace_center_z = kspace.shape[-3] // 2
         kspace_center_y = kspace.shape[-2] // 2
         kspace_center_x = kspace.shape[-1] // 2
+        new_kspace_extend_z_half = z_extend // 2
+        new_kspace_extend_z_half = z_extend // 2
         new_kspace_extend_y_half = kspace.shape[-2] // (down_sampling_factor * 2)
         new_kspace_extend_x_half = kspace.shape[-1] // (down_sampling_factor * 2)
-        k_space_downsampled = k_space_downsampled[:, :,
-                                                  kspace_center_y - new_kspace_extend_y_half:kspace_center_y + new_kspace_extend_y_half,
-                                                  kspace_center_x - new_kspace_extend_x_half:kspace_center_x + new_kspace_extend_x_half]
-        image = torch.zeros(
-            (kspace.shape[1], kspace.shape[2] // down_sampling_factor, kspace.shape[3] // down_sampling_factor))
-        for slice_idx in range(kspace.shape[1]):
-            kspace_slice = transforms.to_tensor(kspace[:, slice_idx])
-            y_slice_center = kspace_slice.shape[-3] // 2
-            y_downsample_extend_half = (
-                kspace_slice.shape[-3] // down_sampling_factor) // 2
-            x_slice_center = kspace_slice.shape[-2] // 2
-            x_downsample_extend_half = (
-                kspace_slice.shape[-2] // down_sampling_factor) // 2
-            kspace_slice = kspace_slice[...,
-                                        y_slice_center - y_downsample_extend_half: y_slice_center - y_downsample_extend_half + image.shape[1],
-                                        x_slice_center - x_downsample_extend_half: x_slice_center - x_downsample_extend_half + image.shape[2], :]
-            image_slice = fastmri.ifft2c(kspace_slice)
-            image_slice = fastmri.complex_abs(image_slice)
-            image_slice = fastmri.rss(image_slice, dim=0)
-            image[slice_idx] = image_slice
-        image = image.numpy()
-        return image, k_space_downsampled
+        k_space_downsampled = k_space_downsampled[:,
+                              kspace_center_z - new_kspace_extend_z_half:kspace_center_z + new_kspace_extend_z_half,
+                              kspace_center_y - new_kspace_extend_y_half:kspace_center_y + new_kspace_extend_y_half,
+                              kspace_center_x - new_kspace_extend_x_half:kspace_center_x + new_kspace_extend_x_half]
+        k_space_downsampled = torch.view_as_real(torch.from_numpy(k_space_downsampled))
+        volume = fastmri.ifft3c(k_space_downsampled)
+        volume = fastmri.complex_abs(volume)
+        volume = fastmri.rss(volume, dim=0)
+        volume = volume
+        return volume, k_space_downsampled
 
     def get_cache(self, i: int):
         file_location = os.path.join(self.cache_path, f"{i}.pkl")
@@ -620,23 +611,18 @@ class CESTDataset(VolumeDataset):
 
     def apply_virtual_cest_contrast(self, kspace, target, offset: int):
         # self.cest_transform(volume, offset)
-        random_num = 10 * np.random.rand() + 1e4
+        random_num = 1e3 * np.random.rand() + 1e4
         kspace = deepcopy(kspace) * random_num
         target = deepcopy(target) * random_num
         return kspace, target
 
     def generate_offset(self, kspace, mask, hf, metadata, fname, offset):
-        num_slices = 8
         downsampling_factor = 4
         x_y_extend = 320 // downsampling_factor
-        # rand_first_slice = random.randint(0, kspace.shape[1] - num_slices)
-        # rand_last_slice = rand_first_slice + num_slices
-        first_slice = 10
-        last_slice = first_slice + num_slices
-        kspace = kspace[:, first_slice:last_slice]
-        target, k_space_downsampled = self.reco(kspace, downsampling_factor)
+        z_extend = 8
+        target, k_space_downsampled = self.reco(kspace, downsampling_factor, z_extend)
         target = transforms.complex_center_crop_3d(
-            target, (num_slices, x_y_extend, x_y_extend))
+            target, (z_extend, x_y_extend, x_y_extend))
         kspace = k_space_downsampled
         attrs = dict(hf.attrs)
         attrs.update(metadata)
@@ -658,14 +644,17 @@ class CESTDataset(VolumeDataset):
             kspace = np.asarray(hf["kspace"])
             kspace = np.transpose(kspace, (1, 0, 2, 3))
 
+            kspace = fastmri.fft1c(torch.from_numpy(np.stack((np.real(kspace), np.imag(kspace)), -1)), dim=-4).numpy()
+            kspace = kspace[..., 0] + 1j * kspace[..., 1]
+
             mask = np.asarray(hf["mask"]) if "mask" in hf else None
 
             for o in range(self.num_offsets):
                 sample = self.generate_offset(kspace, mask, hf, metadata, fname, o)
                 samples.append(sample)
 
-        kspace = torch.swapaxes(torch.tensor(np.array([s[0] for s in samples])), 0, 1)
-        target = torch.tensor(np.array([s[2] for s in samples]))
+        kspace = torch.stack([s[0] for s in samples], dim=1)
+        target = torch.stack([s[2] for s in samples], 0)
         return (kspace, mask, target, sample[3], fname.name, -1)
     
     def get_cache(self, i: int):
