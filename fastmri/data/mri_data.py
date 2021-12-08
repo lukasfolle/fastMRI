@@ -10,18 +10,18 @@ import os
 import pickle
 import random
 import xml.etree.ElementTree as etree
+from copy import deepcopy
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
 from warnings import warn
-import pickle
-from copy import deepcopy
 
-import fastmri
-from fastmri.data import transforms
 import h5py
 import numpy as np
 import torch
 import yaml
+
+import fastmri
+from fastmri.data import transforms
 
 
 def et_query(
@@ -560,6 +560,46 @@ class VolumeDataset(torch.utils.data.Dataset):
         return sample
 
 
+class RealCESTData(torch.utils.data.Dataset):
+    def __init__(self, base_path=r"E:\Lukas\cest_data"):
+        self.base_path = base_path
+        self.cases = []
+
+    def load_data(self):
+        for file in os.listdir(self.base_path):
+            if "cest_knee_raw_real" in file:
+                file_path = os.path.join(self.base_path, file)
+                if not file_path.endswith("mat"):
+                    raise NotImplementedError("Can only process .mat files.")
+                f = h5py.File(file_path, 'r')
+                data = f.get('r')
+                data = np.array(data)
+                data = np.moveaxis(data, np.arange(len(data.shape)),
+                                   [1, -1, 2, 3, 0, 4])  # maybe switch 3 and 4 ie phase and freq?
+                print(f"Out of {data.shape[-1]} repetitions, selecting the first one.")
+                real = data[..., 0]
+                f = h5py.File(file_path.replace("real", "imag"), 'r')
+                data = f.get('im')
+                data = np.array(data)
+                data = np.moveaxis(data, np.arange(len(data.shape)),
+                                   [1, -1, 2, 3, 0, 4])  # maybe switch 3 and 4 ie phase and freq?
+                im = data[..., 0]
+                complex_case = np.stack((real, im), -1)
+                mask = np.abs(real + 1j * im).sum((0, 1, 4), keepdims=True) > 0.0
+                mask = np.repeat(np.repeat(mask, im.shape[1], axis=1)[..., None], 2, axis=-1)
+                # k-space target shape: (coils, offsets, slices, x, y)
+                self.cases.append((complex_case, mask))
+
+    def __len__(self):
+        return len(self.cases)
+
+    def __getitem__(self, i):
+        if len(self.cases) == 0:
+            self.load_data()
+        kspace, mask = self.cases[i]
+        return torch.from_numpy(kspace), torch.from_numpy(mask)
+
+
 class CESTDataset(VolumeDataset):
     def __init__(self,
                  root: Union[str, Path, os.PathLike],
@@ -586,7 +626,7 @@ class CESTDataset(VolumeDataset):
         return kspace, target
 
     def generate_offset(self, kspace, mask, hf, metadata, fname, offset):
-        num_slices = 4
+        num_slices = 8
         downsampling_factor = 4
         x_y_extend = 320 // downsampling_factor
         # rand_first_slice = random.randint(0, kspace.shape[1] - num_slices)
@@ -656,7 +696,7 @@ if __name__ == "__main__":
     # cest_ds = CESTDataset("/home/woody/iwi5/iwi5044h/fastMRI/multicoil_train", "multicoil", transform, use_dataset_cache=False, cache_path="/home/woody/iwi5/iwi5044h/Code/fastMRI/cache_test")
     cest_ds = CESTDataset(r"E:\Lukas\multicoil_train", "multicoil", transform, use_dataset_cache=False,
                           cache_path=r"E:\Lukas\cache_test")
-    
+
     for i in range(len(cest_ds)):
         item = cest_ds.__getitem__(i)
         print(f"\n\nItem {i}")
@@ -664,12 +704,12 @@ if __name__ == "__main__":
 
             mask = item.mask[:, offset].numpy().squeeze()
             vol = item.target[offset].numpy().squeeze()
-            # plt.imshow(mask[..., 0])
-            # plt.title(f"Sample {i}, offset {offset}")
-            # plt.show()
-            # vol = (vol - vol.min()) / (vol.max() - vol.min())
-            # vol = np.moveaxis(vol, 0, -1)
-            # scroll_slices(vol, title=f"Sample {i} Offset {offset}")
+            plt.imshow(mask[..., 0])
+            plt.title(f"Sample {i}, offset {offset}")
+            plt.show()
+            vol = (vol - vol.min()) / (vol.max() - vol.min())
+            vol = np.moveaxis(vol, 0, -1)
+            scroll_slices(vol, title=f"Sample {i} Offset {offset}")
             print(f"Mean target: {np.mean(vol):.3g} Mean kspace {np.mean(item.masked_kspace[offset].numpy().squeeze()):.3g}")
 
     # varnet = VarNet4D(8, 2, 2, 2, 2).cuda()
@@ -681,5 +721,6 @@ if __name__ == "__main__":
     # ret = varnet(item.masked_kspace.unsqueeze(0).cuda(), item.mask.cuda(), item.num_low_frequencies)
     # print(ret.shape)
     # print(f"GPU GB allocated {torch.cuda.max_memory_allocated() / 10**9}")
-    
-    
+
+    # rcd = RealCESTData()
+    # print(rcd.__getitem__(0)[0].shape)
