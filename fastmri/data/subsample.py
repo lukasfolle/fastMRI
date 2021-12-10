@@ -467,7 +467,7 @@ class EquispacedMaskFractionFunc3D(MaskFunc3D):
     def __init__(self, center_fractions, accelerations, allow_any_combination=False, seed=None):
         super().__init__(center_fractions, accelerations, allow_any_combination, seed)
         self.eliptical_mask = np.load(
-            r"C:\Users\follels\Documents\fastMRI\fastmri\data\kspace_eliptical_mask.npy"
+            "/home/follels/Documents/fastMRI/fastmri/data/kspace_eliptical_mask.npy"
         ).astype(float)
 
     def calculate_acceleration_mask_3D(
@@ -494,19 +494,9 @@ class EquispacedMaskFractionFunc3D(MaskFunc3D):
         """
         eliptial_mask = resize(self.eliptical_mask, output_shape=(shape[-3], shape[-2]), order=1) > 0.5
 
-        # determine acceleration rate by adjusting for the number of low frequencies
-        adjusted_accel_col = (acceleration * (num_low_frequencies - shape[-2])) / (
-            num_low_frequencies * acceleration - shape[-2]
-        )
         mask = np.zeros((shape[-3], shape[-2]))
-        # for slice_idx in range(shape[-3]):
-        #     if offset is None:
-        #         offset = self.rng.randint(0, high=round(adjusted_accel_col))
-        #     accel_samples_col = np.arange(offset, shape[-2] - 1, adjusted_accel_col)
-        #     accel_samples_col = np.around(accel_samples_col).astype(np.uint)
-        #     mask[slice_idx, accel_samples_col] = 1.0
-        mask_offset = self.rng.randint(0, 2)
-        phase_offset = self.rng.randint(0, 3)
+        mask_offset = 0  # self.rng.randint(0, 2)
+        phase_offset = 0  # self.rng.randint(0, 3)
         mask[mask_offset::2, phase_offset::3] = 1.0
         mask = mask * eliptial_mask
         return mask

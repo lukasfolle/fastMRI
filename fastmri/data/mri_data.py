@@ -19,9 +19,11 @@ import h5py
 import numpy as np
 import torch
 import yaml
+from pygrappa.mdgrappa import mdgrappa
 
 import fastmri
 from fastmri.data import transforms
+from fastmri.data.transforms import VarNetSample
 
 
 def et_query(
@@ -495,7 +497,6 @@ class VolumeDataset(torch.utils.data.Dataset):
         volume = fastmri.ifft3c(k_space_downsampled)
         volume = fastmri.complex_abs(volume)
         volume = fastmri.rss(volume, dim=0)
-        volume = volume
         return volume, k_space_downsampled
 
     def get_cache(self, i: int):
@@ -606,21 +607,35 @@ class CESTDataset(VolumeDataset):
                  num_offsets: int = 8):
         super().__init__(root, challenge, transform, use_dataset_cache, sample_rate,
                          volume_sample_rate, dataset_cache_file, num_cols, cache_path)
-        # self.cest_transform = lambda x, o: x
         self.num_offsets = num_offsets
+        # Undersampling mask is fixed for now
+        self.mask = create_mask_for_mask_type("equispaced_fraction_3d", [0.08], [2]).calculate_acceleration_mask_3D(None, None, None, None, [1, 8, 92, 1])
+        self.apply_grappa = True
 
     def apply_virtual_cest_contrast(self, kspace, target, offset: int):
-        # self.cest_transform(volume, offset)
         random_num = 1e3 * np.random.rand() + 1e4
         kspace = deepcopy(kspace) * random_num
         target = deepcopy(target) * random_num
         return kspace, target
 
-    def generate_offset(self, kspace, mask, hf, metadata, fname, offset):
+    def generate_offset(self, kspace, mask, hf, metadata, fname, offset, grappa_weights=None):
         downsampling_factor = 4
         x_y_extend = 320 // downsampling_factor
         z_extend = 8
         target, k_space_downsampled = self.reco(kspace, downsampling_factor, z_extend)
+        if self.apply_grappa:
+            mask = mask[None, :, None, :, None]
+            mask = np.repeat(np.repeat(np.repeat(mask, k_space_downsampled.shape[0], 0), 2, -1), k_space_downsampled.shape[2], 2)
+            k_space_downsampled_undersampled = mask * k_space_downsampled.numpy()
+            acs = k_space_downsampled[:, :, k_space_downsampled.shape[2]//2 - 10:k_space_downsampled.shape[2]//2 + 10,
+                                        k_space_downsampled.shape[3]//2 - 10:k_space_downsampled.shape[3]//2 + 10]
+            acs = acs.numpy()
+            if grappa_weights is None:                     
+                grappa_weights = self.calculate_grappa_weights(k_space_downsampled_undersampled, acs)
+            
+            k_space_downsampled_undersampled_grappa = self.apply_grappa_weights(k_space_downsampled_undersampled, grappa_weights)
+            k_space_downsampled_undersampled_grappa = torch.from_numpy(k_space_downsampled_undersampled_grappa)
+            k_space_downsampled = k_space_downsampled_undersampled_grappa
         target = transforms.complex_center_crop_3d(
             target, (z_extend, x_y_extend, x_y_extend))
         kspace = k_space_downsampled
@@ -630,7 +645,23 @@ class CESTDataset(VolumeDataset):
         kspace, target = self.apply_virtual_cest_contrast(kspace, target, offset)
 
         sample = (kspace, mask, target, attrs, fname.name, -1)
-        return sample
+        return sample, grappa_weights
+
+    def calculate_grappa_weights(self, kspace, acs):
+        acs = acs[..., 0] + 1j * acs[..., 1]
+        kspace = kspace[..., 0] + 1j * kspace[..., 1]
+        acs = np.swapaxes(acs, 1, -1)
+        kspace = np.swapaxes(kspace, 1, -1)
+        _, grappa_weights = mdgrappa(kspace, acs, coil_axis=0, kernel_size=(5, 5, 5), ret_weights=True)
+        return grappa_weights
+
+    def apply_grappa_weights(self, sample, grappa_weights):
+        sample = sample[..., 0] + 1j * sample[..., 1]
+        sample = np.swapaxes(sample, 1, -1)
+        sample_grappa = mdgrappa(sample, sample, weights=grappa_weights, coil_axis=0, kernel_size=(5, 5, 5))
+        sample_grappa = np.swapaxes(sample_grappa, -1, 1)
+        sample_grappa = np.stack((np.real(sample_grappa), np.imag(sample_grappa)), -1)
+        return sample_grappa
 
     def generate_sample(self, i: int):
         if len(self.examples[i]) > 2:
@@ -647,10 +678,10 @@ class CESTDataset(VolumeDataset):
             kspace = fastmri.fft1c(torch.from_numpy(np.stack((np.real(kspace), np.imag(kspace)), -1)), dim=-4).numpy()
             kspace = kspace[..., 0] + 1j * kspace[..., 1]
 
-            mask = np.asarray(hf["mask"]) if "mask" in hf else None
-
+            mask = self.mask
+            grappa_weights = None
             for o in range(self.num_offsets):
-                sample = self.generate_offset(kspace, mask, hf, metadata, fname, o)
+                sample, grappa_weights = self.generate_offset(kspace, mask, hf, metadata, fname, o, grappa_weights)
                 samples.append(sample)
 
         kspace = torch.stack([s[0] for s in samples], dim=1)
@@ -668,6 +699,19 @@ class CESTDataset(VolumeDataset):
                 pickle.dump(samples, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
         if self.transform is None:
+            masked_kspace = samples[0]
+            mask_torch = samples[1][None, None, :, None, :, None]
+
+            samples = VarNetSample(
+                masked_kspace=masked_kspace,
+                mask=torch.from_numpy(mask_torch).to(torch.bool),
+                num_low_frequencies=0,
+                target=samples[2],
+                fname=samples[4],
+                slice_num=-1,
+                max_value=-1,
+                crop_size=-1,
+            )
             return samples
         samples = self.transform(*samples)
         return samples
@@ -683,22 +727,32 @@ if __name__ == "__main__":
     mask = create_mask_for_mask_type("equispaced_fraction_3d", [0.08], [2])
     transform = VarNetDataTransformVolume4D(mask_func=mask, use_seed=False)
     # cest_ds = CESTDataset("/home/woody/iwi5/iwi5044h/fastMRI/multicoil_train", "multicoil", transform, use_dataset_cache=False, cache_path="/home/woody/iwi5/iwi5044h/Code/fastMRI/cache_test")
-    cest_ds = CESTDataset(r"E:\Lukas\multicoil_train", "multicoil", transform, use_dataset_cache=False,
-                          cache_path=r"E:\Lukas\cache_test")
+    cest_ds = CESTDataset("/data/fastMRI/multicoil_train", "multicoil", transform=None, use_dataset_cache=False,
+                          cache_path="/data/fastMRI/cache")
 
     for i in range(len(cest_ds)):
         item = cest_ds.__getitem__(i)
         print(f"\n\nItem {i}")
         for offset in range(item.target.shape[0]):
 
-            mask = item.mask[:, offset].numpy().squeeze()
+            mask = item.mask.numpy().squeeze()
             vol = item.target[offset].numpy().squeeze()
-            plt.imshow(mask[..., 0])
+            plt.imshow(mask)
             plt.title(f"Sample {i}, offset {offset}")
             plt.show()
             vol = (vol - vol.min()) / (vol.max() - vol.min())
             vol = np.moveaxis(vol, 0, -1)
             scroll_slices(vol, title=f"Sample {i} Offset {offset}")
+
+            k_space_downsampled = item.masked_kspace[:, offset]
+            k_space_downsampled = torch.view_as_real(k_space_downsampled[..., 0] + 1j * k_space_downsampled[..., 1])
+            volume = fastmri.ifft3c(k_space_downsampled)
+            volume = fastmri.complex_abs(volume)
+            volume = fastmri.rss(volume, dim=0)
+            volume = (volume - volume.min()) / (volume.max() - volume.min())
+            volume = np.moveaxis(volume.numpy(), 0, -1)
+            scroll_slices(volume, title=f"Sample {i} Offset {offset}")
+
             print(f"Mean target: {np.mean(vol):.3g} Mean kspace {np.mean(item.masked_kspace[offset].numpy().squeeze()):.3g}")
 
     # varnet = VarNet4D(8, 2, 2, 2, 2).cuda()
