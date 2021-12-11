@@ -24,6 +24,7 @@ from pygrappa.mdgrappa import mdgrappa
 import fastmri
 from fastmri.data import transforms
 from fastmri.data.transforms import VarNetSample
+from fastmri.data.subsample import create_mask_for_mask_type
 
 
 def et_query(
@@ -700,10 +701,10 @@ class CESTDataset(VolumeDataset):
 
         if self.transform is None:
             masked_kspace = samples[0]
-            mask_torch = samples[1][None, None, :, None, :, None]
+            mask_torch = np.repeat(np.repeat(np.repeat(np.repeat(samples[1][None, None, :, None, :, None], samples[0].shape[0], 0), 2, -1), masked_kspace.shape[1], 1), masked_kspace.shape[-3], -3)
 
             samples = VarNetSample(
-                masked_kspace=masked_kspace,
+                masked_kspace=masked_kspace.to(torch.float32),
                 mask=torch.from_numpy(mask_torch).to(torch.bool),
                 num_low_frequencies=0,
                 target=samples[2],
@@ -730,40 +731,40 @@ if __name__ == "__main__":
     cest_ds = CESTDataset("/data/fastMRI/multicoil_train", "multicoil", transform=None, use_dataset_cache=False,
                           cache_path="/data/fastMRI/cache")
 
-    for i in range(len(cest_ds)):
-        item = cest_ds.__getitem__(i)
-        print(f"\n\nItem {i}")
-        for offset in range(item.target.shape[0]):
+    # for i in range(len(cest_ds)):
+    #     item = cest_ds.__getitem__(i)
+    #     print(f"\n\nItem {i}")
+    #     for offset in range(item.target.shape[0]):
 
-            mask = item.mask.numpy().squeeze()
-            vol = item.target[offset].numpy().squeeze()
-            plt.imshow(mask)
-            plt.title(f"Sample {i}, offset {offset}")
-            plt.show()
-            vol = (vol - vol.min()) / (vol.max() - vol.min())
-            vol = np.moveaxis(vol, 0, -1)
-            scroll_slices(vol, title=f"Sample {i} Offset {offset}")
+    #         mask = item.mask.numpy().squeeze()
+    #         vol = item.target[offset].numpy().squeeze()
+    #         plt.imshow(mask)
+    #         plt.title(f"Sample {i}, offset {offset}")
+    #         plt.show()
+    #         vol = (vol - vol.min()) / (vol.max() - vol.min())
+    #         vol = np.moveaxis(vol, 0, -1)
+    #         scroll_slices(vol, title=f"Sample {i} Offset {offset}")
 
-            k_space_downsampled = item.masked_kspace[:, offset]
-            k_space_downsampled = torch.view_as_real(k_space_downsampled[..., 0] + 1j * k_space_downsampled[..., 1])
-            volume = fastmri.ifft3c(k_space_downsampled)
-            volume = fastmri.complex_abs(volume)
-            volume = fastmri.rss(volume, dim=0)
-            volume = (volume - volume.min()) / (volume.max() - volume.min())
-            volume = np.moveaxis(volume.numpy(), 0, -1)
-            scroll_slices(volume, title=f"Sample {i} Offset {offset}")
+    #         k_space_downsampled = item.masked_kspace[:, offset]
+    #         k_space_downsampled = torch.view_as_real(k_space_downsampled[..., 0] + 1j * k_space_downsampled[..., 1])
+    #         volume = fastmri.ifft3c(k_space_downsampled)
+    #         volume = fastmri.complex_abs(volume)
+    #         volume = fastmri.rss(volume, dim=0)
+    #         volume = (volume - volume.min()) / (volume.max() - volume.min())
+    #         volume = np.moveaxis(volume.numpy(), 0, -1)
+    #         scroll_slices(volume, title=f"Sample {i} Offset {offset}")
 
-            print(f"Mean target: {np.mean(vol):.3g} Mean kspace {np.mean(item.masked_kspace[offset].numpy().squeeze()):.3g}")
+    #         print(f"Mean target: {np.mean(vol):.3g} Mean kspace {np.mean(item.masked_kspace[offset].numpy().squeeze()):.3g}")
 
-    # varnet = VarNet4D(8, 2, 2, 2, 2).cuda()
-    # item = cest_ds.__getitem__(0)
-    # print(item.masked_kspace.shape)
-    # print(item.mask.shape)
-    # print(item.target.shape)
-    # print(item.num_low_frequencies)
-    # ret = varnet(item.masked_kspace.unsqueeze(0).cuda(), item.mask.cuda(), item.num_low_frequencies)
-    # print(ret.shape)
-    # print(f"GPU GB allocated {torch.cuda.max_memory_allocated() / 10**9}")
+    varnet = VarNet4D(4, 2, 4, 3, 2).to("cuda")
+    item = cest_ds.__getitem__(0)
+    print(item.masked_kspace.shape)
+    print(item.mask.shape)
+    print(item.target.shape)
+    print(item.num_low_frequencies)
+    ret = varnet(item.masked_kspace.unsqueeze(0).to("cuda"), item.mask.to("cuda"), item.num_low_frequencies)
+    print(ret.shape)
+    print(f"GPU GB allocated {torch.cuda.max_memory_allocated() / 10**9}")
 
     # rcd = RealCESTData()
     # print(rcd.__getitem__(0)[0].shape)

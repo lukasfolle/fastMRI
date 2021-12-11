@@ -128,12 +128,13 @@ class MriModule(pl.LightningModule):
                 if "mask" in val_logs.keys():
                     mask = val_logs["mask"][i]
                     mask = mask / mask.max()
-                    if len(mask.squeeze().shape) > 1:
-                        mask = mask.squeeze().unsqueeze(0)
-                        mask = mask[:, 2, :, :, 0]
-                    else:
-                        mask = mask.squeeze()
-                        mask = mask.tile((mask.shape[0], 1)).unsqueeze(0)
+                    # if len(mask.squeeze().shape) > 1:
+                    #     mask = mask.squeeze().unsqueeze(0)
+                    #     mask = mask[:, 2, :, :, 0]
+                    # else:
+                    #     mask = mask.squeeze()
+                    #     mask = mask.tile((mask.shape[0], 1)).unsqueeze(0)
+                    mask = mask[0, 0, :, 0, :, 0]
                     self.log_image(f"{key}/mask", mask)
         # # compute evaluation metrics
         # mse_vals = defaultdict(dict)

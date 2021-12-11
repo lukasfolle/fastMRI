@@ -24,19 +24,19 @@ def cli_main(args):
     # data
     # ------------
     # this creates a k-space mask for transforming input data
-    mask = create_mask_for_mask_type("equispaced_fraction_3d", args.center_fractions, args.accelerations)
+    # mask = create_mask_for_mask_type("equispaced_fraction_3d", args.center_fractions, args.accelerations)
     # use random masks for train transform, fixed masks for val transform
-    train_transform = VarNetDataTransformVolume4D(mask_func=mask, use_seed=False)
-    val_transform = VarNetDataTransformVolume4D(mask_func=mask)
-    test_transform = VarNetDataTransformVolume4D()
+    # train_transform = VarNetDataTransformVolume4D(mask_func=mask, use_seed=False)
+    # val_transform = VarNetDataTransformVolume4D(mask_func=mask)
+    # test_transform = VarNetDataTransformVolume4D()
 
     # ptl data module - this handles data loaders
     data_module = FastMriDataModule(
         data_path=args.data_path,
         challenge=args.challenge,
-        train_transform=train_transform,
-        val_transform=val_transform,
-        test_transform=test_transform,
+        train_transform=None,
+        val_transform=None,
+        test_transform=None,
         test_split=args.test_split,
         test_path=args.test_path,
         sample_rate=args.sample_rate,
@@ -127,7 +127,7 @@ def build_args():
 
     parser.add_argument(
         "--cache_dir",
-        default=r"C:\Users\follels\Documents\fastMRI\cache",#"/home/woody/iwi5/iwi5044h/fastMRI/cache",
+        default="/data/fastMRI/cache/",#"/home/woody/iwi5/iwi5044h/fastMRI/cache",
         type=str,
         help="Folder to save cache to",
     )
@@ -156,7 +156,7 @@ def build_args():
         deterministic=False,  # makes things slower, but deterministic
         default_root_dir=default_root_dir,  # directory for logs and checkpoints
         max_epochs=1000,  # max number of epochs
-        num_workers=4,
+        num_workers=0,
         # overfit_batches=1,
         log_every_n_steps=10,
     )
