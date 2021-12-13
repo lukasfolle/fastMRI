@@ -127,7 +127,7 @@ def build_args():
 
     parser.add_argument(
         "--cache_dir",
-        default="/data/fastMRI/cache/",#"/home/woody/iwi5/iwi5044h/fastMRI/cache",
+        default=fetch_dir("cache_path", path_config),
         type=str,
         help="Folder to save cache to",
     )
@@ -156,7 +156,7 @@ def build_args():
         deterministic=False,  # makes things slower, but deterministic
         default_root_dir=default_root_dir,  # directory for logs and checkpoints
         max_epochs=1000,  # max number of epochs
-        num_workers=0,
+        num_workers=4,
         # overfit_batches=1,
         log_every_n_steps=10,
     )

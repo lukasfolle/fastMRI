@@ -15,6 +15,7 @@ from fastmri.models import VarNet, VarNet3D, VarNet4D
 from fastmri.losses import ssim3D_loss, combined_loss
 
 from .mri_module import MriModule
+from fastmri.data.cest_test_data import generate_test_sample
 
 
 class VarNetModule(MriModule):
@@ -157,6 +158,15 @@ class VarNetModule(MriModule):
             "slice": batch.slice_num,
             "output": output.cpu().numpy(),
         }
+
+    def validation_epoch_end(self, val_logs):
+        super().validation_epoch_end(val_logs)
+        kspace, mask, num_low_frequencies = generate_test_sample(self.device)
+        prediction = self(kspace, mask, num_low_frequencies)
+        prediction = prediction.squeeze().cpu().numpy()
+        prediction = (prediction - prediction.min()) / (prediction.max() - prediction.min() + 1e-6)
+        prediction = prediction[2, 2][None]
+        self.log_image("val/real_cest_prediction", prediction)
 
     def configure_optimizers(self):
         optim = torch.optim.Adam(

@@ -568,14 +568,14 @@ class RealCESTData(torch.utils.data.Dataset):
                 data = f.get('r')
                 data = np.array(data)
                 data = np.moveaxis(data, np.arange(len(data.shape)),
-                                   [1, -1, 2, 3, 0, 4])  # maybe switch 3 and 4 ie phase and freq?
+                                   [1, -1, 2, 4, 0, 3])  # maybe switch 3 and 4 ie phase and freq?
                 print(f"Out of {data.shape[-1]} repetitions, selecting the first one.")
                 real = data[..., 0]
                 f = h5py.File(file_path.replace("real", "imag"), 'r')
                 data = f.get('im')
                 data = np.array(data)
                 data = np.moveaxis(data, np.arange(len(data.shape)),
-                                   [1, -1, 2, 3, 0, 4])  # maybe switch 3 and 4 ie phase and freq?
+                                   [1, -1, 2, 4, 0, 3])  # maybe switch 3 and 4 ie phase and freq?
                 im = data[..., 0]
                 complex_case = np.stack((real, im), -1)
                 mask = np.abs(real + 1j * im).sum((0, 1, 4), keepdims=True) > 0.0
@@ -610,7 +610,6 @@ class CESTDataset(VolumeDataset):
                          volume_sample_rate, dataset_cache_file, num_cols, cache_path)
         self.num_offsets = num_offsets
         # Undersampling mask is fixed for now
-        self.mask = create_mask_for_mask_type("equispaced_fraction_3d", [0.08], [2]).calculate_acceleration_mask_3D(None, None, None, None, [1, 8, 92, 1])
         self.apply_grappa = True
 
     def apply_virtual_cest_contrast(self, kspace, target, offset: int):
@@ -619,22 +618,27 @@ class CESTDataset(VolumeDataset):
         target = deepcopy(target) * random_num
         return kspace, target
 
-    def generate_offset(self, kspace, mask, hf, metadata, fname, offset, grappa_weights=None):
+    def generate_offset(self, kspace, hf, metadata, fname, offset, grappa_weights=None):
         downsampling_factor = 4
         x_y_extend = 320 // downsampling_factor
         z_extend = 8
         target, k_space_downsampled = self.reco(kspace, downsampling_factor, z_extend)
         if self.apply_grappa:
+            mask = create_mask_for_mask_type("equispaced_fraction_3d", [0.08], [2]).calculate_acceleration_mask_3D(
+                None, None, None, None, [1, 8, k_space_downsampled.shape[-2], 1])
             mask = mask[None, :, None, :, None]
-            mask = np.repeat(np.repeat(np.repeat(mask, k_space_downsampled.shape[0], 0), 2, -1), k_space_downsampled.shape[2], 2)
+            mask = np.repeat(np.repeat(np.repeat(mask, k_space_downsampled.shape[0], 0), 2, -1),
+                             k_space_downsampled.shape[2], 2)
             k_space_downsampled_undersampled = mask * k_space_downsampled.numpy()
-            acs = k_space_downsampled[:, :, k_space_downsampled.shape[2]//2 - 10:k_space_downsampled.shape[2]//2 + 10,
-                                        k_space_downsampled.shape[3]//2 - 10:k_space_downsampled.shape[3]//2 + 10]
+            acs = k_space_downsampled[:, :,
+                  k_space_downsampled.shape[2] // 2 - 10:k_space_downsampled.shape[2] // 2 + 10,
+                  k_space_downsampled.shape[3] // 2 - 10:k_space_downsampled.shape[3] // 2 + 10]
             acs = acs.numpy()
-            if grappa_weights is None:                     
+            if grappa_weights is None:
                 grappa_weights = self.calculate_grappa_weights(k_space_downsampled_undersampled, acs)
-            
-            k_space_downsampled_undersampled_grappa = self.apply_grappa_weights(k_space_downsampled_undersampled, grappa_weights)
+
+            k_space_downsampled_undersampled_grappa = self.apply_grappa_weights(k_space_downsampled_undersampled,
+                                                                                grappa_weights)
             k_space_downsampled_undersampled_grappa = torch.from_numpy(k_space_downsampled_undersampled_grappa)
             k_space_downsampled = k_space_downsampled_undersampled_grappa
         target = transforms.complex_center_crop_3d(
@@ -679,16 +683,15 @@ class CESTDataset(VolumeDataset):
             kspace = fastmri.fft1c(torch.from_numpy(np.stack((np.real(kspace), np.imag(kspace)), -1)), dim=-4).numpy()
             kspace = kspace[..., 0] + 1j * kspace[..., 1]
 
-            mask = self.mask
             grappa_weights = None
             for o in range(self.num_offsets):
-                sample, grappa_weights = self.generate_offset(kspace, mask, hf, metadata, fname, o, grappa_weights)
+                sample, grappa_weights = self.generate_offset(kspace, hf, metadata, fname, o, grappa_weights)
                 samples.append(sample)
 
         kspace = torch.stack([s[0] for s in samples], dim=1)
         target = torch.stack([s[2] for s in samples], 0)
-        return (kspace, mask, target, sample[3], fname.name, -1)
-    
+        return (kspace, sample[1], target, sample[3], fname.name, -1)
+
     def get_cache(self, i: int):
         file_location = os.path.join(self.cache_path, f"{i}.pkl")
         if os.path.exists(file_location):
@@ -701,7 +704,7 @@ class CESTDataset(VolumeDataset):
 
         if self.transform is None:
             masked_kspace = samples[0]
-            mask_torch = np.repeat(np.repeat(np.repeat(np.repeat(samples[1][None, None, :, None, :, None], samples[0].shape[0], 0), 2, -1), masked_kspace.shape[1], 1), masked_kspace.shape[-3], -3)
+            mask_torch = samples[1]
 
             samples = VarNetSample(
                 masked_kspace=masked_kspace.to(torch.float32),
@@ -723,48 +726,49 @@ if __name__ == "__main__":
     from fastmri.data.subsample import create_mask_for_mask_type
     from utils.matplotlib_viewer import scroll_slices
     import matplotlib.pyplot as plt
-    from fastmri.models.varnet_4d import VarNet4D
+    from tqdm import tqdm, trange
 
     mask = create_mask_for_mask_type("equispaced_fraction_3d", [0.08], [2])
     transform = VarNetDataTransformVolume4D(mask_func=mask, use_seed=False)
     # cest_ds = CESTDataset("/home/woody/iwi5/iwi5044h/fastMRI/multicoil_train", "multicoil", transform, use_dataset_cache=False, cache_path="/home/woody/iwi5/iwi5044h/Code/fastMRI/cache_test")
-    cest_ds = CESTDataset("/data/fastMRI/multicoil_train", "multicoil", transform=None, use_dataset_cache=False,
-                          cache_path="/data/fastMRI/cache")
+    cest_ds = CESTDataset(r"E:\Lukas\multicoil_train", "multicoil", transform=None, use_dataset_cache=False,
+                          cache_path=r"C:\Users\follels\Documents\fastMRI\cache\cache_train")
 
-    # for i in range(len(cest_ds)):
-    #     item = cest_ds.__getitem__(i)
-    #     print(f"\n\nItem {i}")
-    #     for offset in range(item.target.shape[0]):
-
-    #         mask = item.mask.numpy().squeeze()
-    #         vol = item.target[offset].numpy().squeeze()
-    #         plt.imshow(mask)
-    #         plt.title(f"Sample {i}, offset {offset}")
-    #         plt.show()
-    #         vol = (vol - vol.min()) / (vol.max() - vol.min())
-    #         vol = np.moveaxis(vol, 0, -1)
-    #         scroll_slices(vol, title=f"Sample {i} Offset {offset}")
-
-    #         k_space_downsampled = item.masked_kspace[:, offset]
-    #         k_space_downsampled = torch.view_as_real(k_space_downsampled[..., 0] + 1j * k_space_downsampled[..., 1])
-    #         volume = fastmri.ifft3c(k_space_downsampled)
-    #         volume = fastmri.complex_abs(volume)
-    #         volume = fastmri.rss(volume, dim=0)
-    #         volume = (volume - volume.min()) / (volume.max() - volume.min())
-    #         volume = np.moveaxis(volume.numpy(), 0, -1)
-    #         scroll_slices(volume, title=f"Sample {i} Offset {offset}")
+    for i in trange(len(cest_ds)):
+        item = cest_ds.__getitem__(i)
+        print(f"\n\nItem {i}")
+        for offset in range(item.target.shape[0]):
+            # mask = item.mask.numpy().squeeze()
+            # vol = item.target[offset].numpy().squeeze()
+            # mask = mask[0, offset, :, 0, :, 0]
+            # plt.imshow(mask)
+            # plt.title(f"Sample {i}, offset {offset}")
+            # plt.show()
+            # vol = (vol - vol.min()) / (vol.max() - vol.min())
+            # vol = np.moveaxis(vol, 0, -1)
+            # scroll_slices(vol, title=f"Sample {i} Offset {offset}")
+            #
+            # k_space_downsampled = item.masked_kspace[:, offset]
+            # k_space_downsampled = torch.view_as_real(k_space_downsampled[..., 0] + 1j * k_space_downsampled[..., 1])
+            # volume = fastmri.ifft3c(k_space_downsampled)
+            # volume = fastmri.complex_abs(volume)
+            # volume = fastmri.rss(volume, dim=0)
+            # volume = (volume - volume.min()) / (volume.max() - volume.min())
+            # volume = np.moveaxis(volume.numpy(), 0, -1)
+            # scroll_slices(volume, title=f"Sample {i} Offset {offset}")
+            pass
 
     #         print(f"Mean target: {np.mean(vol):.3g} Mean kspace {np.mean(item.masked_kspace[offset].numpy().squeeze()):.3g}")
 
-    varnet = VarNet4D(4, 2, 4, 3, 2).to("cuda")
-    item = cest_ds.__getitem__(0)
-    print(item.masked_kspace.shape)
-    print(item.mask.shape)
-    print(item.target.shape)
-    print(item.num_low_frequencies)
-    ret = varnet(item.masked_kspace.unsqueeze(0).to("cuda"), item.mask.to("cuda"), item.num_low_frequencies)
-    print(ret.shape)
-    print(f"GPU GB allocated {torch.cuda.max_memory_allocated() / 10**9}")
+    # varnet = VarNet4D(4, 2, 4, 3, 2).to("cuda")
+    # item = cest_ds.__getitem__(0)
+    # print(item.masked_kspace.shape)
+    # print(item.mask.shape)
+    # print(item.target.shape)
+    # print(item.num_low_frequencies)
+    # ret = varnet(item.masked_kspace.unsqueeze(0).to("cuda"), item.mask.to("cuda"), item.num_low_frequencies)
+    # print(ret.shape)
+    # print(f"GPU GB allocated {torch.cuda.max_memory_allocated() / 10**9}")
 
     # rcd = RealCESTData()
     # print(rcd.__getitem__(0)[0].shape)

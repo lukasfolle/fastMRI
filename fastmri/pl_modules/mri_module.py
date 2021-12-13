@@ -135,7 +135,7 @@ class MriModule(pl.LightningModule):
                     #     mask = mask.squeeze()
                     #     mask = mask.tile((mask.shape[0], 1)).unsqueeze(0)
                     mask = mask[0, 0, :, 0, :, 0]
-                    self.log_image(f"{key}/mask", mask)
+                    self.log_image(f"{key}/mask", mask[None])
         # # compute evaluation metrics
         # mse_vals = defaultdict(dict)
         # target_norms = defaultdict(dict)

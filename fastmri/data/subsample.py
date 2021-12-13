@@ -6,6 +6,7 @@ LICENSE file in the root directory of this source tree.
 """
 
 import contextlib
+import os
 from typing import Optional, Sequence, Tuple, Union
 
 import numpy as np
@@ -466,9 +467,8 @@ class EquispacedMaskFractionFunc(MaskFunc):
 class EquispacedMaskFractionFunc3D(MaskFunc3D):
     def __init__(self, center_fractions, accelerations, allow_any_combination=False, seed=None):
         super().__init__(center_fractions, accelerations, allow_any_combination, seed)
-        self.eliptical_mask = np.load(
-            "/home/follels/Documents/fastMRI/fastmri/data/kspace_eliptical_mask.npy"
-        ).astype(float)
+        print()
+        self.eliptical_mask = np.load(os.path.join(os.path.dirname(__file__), "kspace_eliptical_mask.npy")).astype(float)
 
     def calculate_acceleration_mask_3D(
         self,

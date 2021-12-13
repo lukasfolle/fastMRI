@@ -54,6 +54,8 @@ def worker_init_fn(worker_id):
                         + i
                     )
                 dataset.transform.mask_func.rng.seed(seed_i % (2 ** 32 - 1))
+    elif data.transform is None:
+        return
     elif data.transform.mask_func is not None:
         if is_ddp:  # DDP training: unique seed is determined by worker and device
             seed = base_seed + torch.distributed.get_rank() * worker_info.num_workers
