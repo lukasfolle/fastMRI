@@ -14,6 +14,7 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
 from warnings import warn
+import pathlib
 
 import h5py
 import numpy as np
@@ -553,8 +554,9 @@ class VolumeDataset(torch.utils.data.Dataset):
 
 
 class RealCESTData(torch.utils.data.Dataset):
-    def __init__(self, base_path=r"E:\Lukas\cest_data"):
-        self.base_path = base_path
+    def __init__(self):
+        path_config = pathlib.Path("fastmri_dirs.yaml")
+        self.base_path = fetch_dir("cest_path", path_config)
         self.cases = []
 
     def load_data(self):
