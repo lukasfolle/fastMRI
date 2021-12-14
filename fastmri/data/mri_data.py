@@ -25,6 +25,7 @@ from pygrappa.mdgrappa import mdgrappa
 import fastmri
 from fastmri.data import transforms
 from fastmri.data.transforms import VarNetSample
+from fastmri.data.subsample import create_mask_for_mask_type
 
 
 def et_query(
