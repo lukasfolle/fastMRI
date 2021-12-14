@@ -24,7 +24,6 @@ from pygrappa.mdgrappa import mdgrappa
 import fastmri
 from fastmri.data import transforms
 from fastmri.data.transforms import VarNetSample
-from fastmri.data.subsample import create_mask_for_mask_type
 
 
 def et_query(
@@ -560,7 +559,7 @@ class RealCESTData(torch.utils.data.Dataset):
 
     def load_data(self):
         for file in os.listdir(self.base_path):
-            if "cest_knee_raw_real" in file:
+            if "cest_knee_raw_real.mat" in file:
                 file_path = os.path.join(self.base_path, file)
                 if not file_path.endswith("mat"):
                     raise NotImplementedError("Can only process .mat files.")
@@ -569,7 +568,7 @@ class RealCESTData(torch.utils.data.Dataset):
                 data = np.array(data)
                 data = np.moveaxis(data, np.arange(len(data.shape)),
                                    [1, -1, 2, 4, 0, 3])  # maybe switch 3 and 4 ie phase and freq?
-                print(f"Out of {data.shape[-1]} repetitions, selecting the first one.")
+                # print(f"Out of {data.shape[-1]} repetitions, selecting the first one.")
                 real = data[..., 0]
                 f = h5py.File(file_path.replace("real", "imag"), 'r')
                 data = f.get('im')
@@ -577,11 +576,23 @@ class RealCESTData(torch.utils.data.Dataset):
                 data = np.moveaxis(data, np.arange(len(data.shape)),
                                    [1, -1, 2, 4, 0, 3])  # maybe switch 3 and 4 ie phase and freq?
                 im = data[..., 0]
+                f = h5py.File(file_path.replace("real", "real_ref"), 'r')
+                real_ref = f.get('ref_scan_real')
+                real_ref = np.array(real_ref)
+                real_ref = np.moveaxis(real_ref, np.arange(len(real_ref.shape)),
+                                       [1, 3, 0, 2])  # maybe switch 2 and 3 ie phase and freq?
+                f = h5py.File(file_path.replace("real", "imag_ref"), 'r')
+                real_im = f.get('ref_scan_im')
+                real_im = np.array(real_im)
+                real_im = np.moveaxis(real_im, np.arange(len(real_im.shape)),
+                                      [1, 3, 0, 2])  # maybe switch 2 and 3 ie phase and freq?
                 complex_case = np.stack((real, im), -1)
+                complex_case_ref = np.stack((real_ref, real_im), -1)
                 mask = np.abs(real + 1j * im).sum((0, 1, 4), keepdims=True) > 0.0
                 mask = np.repeat(np.repeat(mask, im.shape[1], axis=1)[..., None], 2, axis=-1)
+
                 # k-space target shape: (coils, offsets, slices, x, y)
-                self.cases.append((complex_case, mask))
+                self.cases.append((complex_case, complex_case_ref, mask))
 
     def __len__(self):
         return len(self.cases)
@@ -589,8 +600,8 @@ class RealCESTData(torch.utils.data.Dataset):
     def __getitem__(self, i):
         if len(self.cases) == 0:
             self.load_data()
-        kspace, mask = self.cases[i]
-        return torch.from_numpy(kspace), torch.from_numpy(mask)
+        kspace, ref, mask = self.cases[i]
+        return torch.from_numpy(kspace), torch.from_numpy(ref), torch.from_numpy(mask)
 
 
 class CESTDataset(VolumeDataset):
@@ -704,7 +715,7 @@ class CESTDataset(VolumeDataset):
 
         if self.transform is None:
             masked_kspace = samples[0]
-            mask_torch = samples[1]
+            mask_torch = np.repeat(samples[1][:, None], masked_kspace.shape[1], 1)
 
             samples = VarNetSample(
                 masked_kspace=masked_kspace.to(torch.float32),
@@ -724,15 +735,13 @@ class CESTDataset(VolumeDataset):
 if __name__ == "__main__":
     from fastmri.data.transforms import VarNetDataTransformVolume4D
     from fastmri.data.subsample import create_mask_for_mask_type
-    from utils.matplotlib_viewer import scroll_slices
-    import matplotlib.pyplot as plt
-    from tqdm import tqdm, trange
+    from tqdm import trange
 
     mask = create_mask_for_mask_type("equispaced_fraction_3d", [0.08], [2])
     transform = VarNetDataTransformVolume4D(mask_func=mask, use_seed=False)
     # cest_ds = CESTDataset("/home/woody/iwi5/iwi5044h/fastMRI/multicoil_train", "multicoil", transform, use_dataset_cache=False, cache_path="/home/woody/iwi5/iwi5044h/Code/fastMRI/cache_test")
-    cest_ds = CESTDataset(r"E:\Lukas\multicoil_train", "multicoil", transform=None, use_dataset_cache=False,
-                          cache_path=r"C:\Users\follels\Documents\fastMRI\cache\cache_train")
+    cest_ds = CESTDataset(r"E:\Lukas\multicoil_val", "multicoil", transform=None, use_dataset_cache=False,
+                          cache_path=r"C:\Users\follels\Documents\fastMRI\cache\cache_val")
 
     for i in trange(len(cest_ds)):
         item = cest_ds.__getitem__(i)

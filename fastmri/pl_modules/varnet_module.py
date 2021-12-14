@@ -16,6 +16,7 @@ from fastmri.losses import ssim3D_loss, combined_loss
 
 from .mri_module import MriModule
 from fastmri.data.cest_test_data import generate_test_sample
+from skimage.metrics import normalized_root_mse
 
 
 class VarNetModule(MriModule):
@@ -131,6 +132,7 @@ class VarNetModule(MriModule):
             output.unsqueeze(1), target.unsqueeze(1),  # data_range=batch.max_value
         )
         self.log("validation_loss", loss)
+        self.log_zero_filling_mse(batch.masked_kspace, batch.target)
         return {
             "batch_idx": batch_idx,
             "fname": batch.fname,
@@ -167,6 +169,20 @@ class VarNetModule(MriModule):
         prediction = (prediction - prediction.min()) / (prediction.max() - prediction.min() + 1e-6)
         prediction = prediction[2, 2][None]
         self.log_image("val/real_cest_prediction", prediction)
+
+    def log_zero_filling_mse(self, kspace, target):
+        mse = 0
+        for offset in range(kspace.shape[2]):
+            t = target[:, offset].squeeze()
+            k_space_downsampled = kspace[:, :, offset].squeeze()
+            k_space_downsampled = torch.view_as_real(k_space_downsampled[..., 0] + 1j * k_space_downsampled[..., 1])
+            volume = fastmri.ifft3c(k_space_downsampled)
+            volume = fastmri.complex_abs(volume)
+            volume = fastmri.rss(volume, dim=0)
+            t, volume = transforms.center_crop_to_smallest(t, volume)
+            mse = mse + normalized_root_mse(volume.cpu().numpy(), t.cpu().numpy())
+        mse = mse / kspace.shape[2]
+        self.log("val_metrics/nrmse_zfil", mse)
 
     def configure_optimizers(self):
         optim = torch.optim.Adam(

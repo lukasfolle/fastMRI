@@ -467,7 +467,6 @@ class EquispacedMaskFractionFunc(MaskFunc):
 class EquispacedMaskFractionFunc3D(MaskFunc3D):
     def __init__(self, center_fractions, accelerations, allow_any_combination=False, seed=None):
         super().__init__(center_fractions, accelerations, allow_any_combination, seed)
-        print()
         self.eliptical_mask = np.load(os.path.join(os.path.dirname(__file__), "kspace_eliptical_mask.npy")).astype(float)
 
     def calculate_acceleration_mask_3D(
