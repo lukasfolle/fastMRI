@@ -555,7 +555,8 @@ class VolumeDataset(torch.utils.data.Dataset):
 
 class RealCESTData(torch.utils.data.Dataset):
     def __init__(self):
-        path_config = pathlib.Path("fastmri_dirs.yaml")
+        path_config = pathlib.Path(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+                                                "fastmri_dirs.yaml"))
         self.base_path = fetch_dir("cest_path", path_config)
         self.cases = []
 
@@ -739,16 +740,16 @@ if __name__ == "__main__":
     from fastmri.data.subsample import create_mask_for_mask_type
     from tqdm import trange
 
-    mask = create_mask_for_mask_type("equispaced_fraction_3d", [0.08], [2])
-    transform = VarNetDataTransformVolume4D(mask_func=mask, use_seed=False)
-    # cest_ds = CESTDataset("/home/woody/iwi5/iwi5044h/fastMRI/multicoil_train", "multicoil", transform, use_dataset_cache=False, cache_path="/home/woody/iwi5/iwi5044h/Code/fastMRI/cache_test")
-    cest_ds = CESTDataset(r"E:\Lukas\multicoil_val", "multicoil", transform=None, use_dataset_cache=False,
-                          cache_path=r"C:\Users\follels\Documents\fastMRI\cache\cache_val")
-
-    for i in trange(len(cest_ds)):
-        item = cest_ds.__getitem__(i)
-        print(f"\n\nItem {i}")
-        for offset in range(item.target.shape[0]):
+    # mask = create_mask_for_mask_type("equispaced_fraction_3d", [0.08], [2])
+    # transform = VarNetDataTransformVolume4D(mask_func=mask, use_seed=False)
+    # # cest_ds = CESTDataset("/home/woody/iwi5/iwi5044h/fastMRI/multicoil_train", "multicoil", transform, use_dataset_cache=False, cache_path="/home/woody/iwi5/iwi5044h/Code/fastMRI/cache_test")
+    # cest_ds = CESTDataset(r"E:\Lukas\multicoil_val", "multicoil", transform=None, use_dataset_cache=False,
+    #                       cache_path=r"C:\Users\follels\Documents\fastMRI\cache\cache_val")
+    #
+    # for i in trange(len(cest_ds)):
+    #     item = cest_ds.__getitem__(i)
+    #     print(f"\n\nItem {i}")
+    #     for offset in range(item.target.shape[0]):
             # mask = item.mask.numpy().squeeze()
             # vol = item.target[offset].numpy().squeeze()
             # mask = mask[0, offset, :, 0, :, 0]
@@ -767,7 +768,7 @@ if __name__ == "__main__":
             # volume = (volume - volume.min()) / (volume.max() - volume.min())
             # volume = np.moveaxis(volume.numpy(), 0, -1)
             # scroll_slices(volume, title=f"Sample {i} Offset {offset}")
-            pass
+
 
     #         print(f"Mean target: {np.mean(vol):.3g} Mean kspace {np.mean(item.masked_kspace[offset].numpy().squeeze()):.3g}")
 
@@ -781,5 +782,5 @@ if __name__ == "__main__":
     # print(ret.shape)
     # print(f"GPU GB allocated {torch.cuda.max_memory_allocated() / 10**9}")
 
-    # rcd = RealCESTData()
-    # print(rcd.__getitem__(0)[0].shape)
+    rcd = RealCESTData()
+    print(rcd.__getitem__(0)[0].shape)
