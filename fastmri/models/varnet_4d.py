@@ -215,12 +215,8 @@ class SensitivityModel(nn.Module):
             masked_kspace = transforms.batched_mask_center(
                 masked_kspace, pad, pad + num_low_freqs
             )
-        if torch.isnan(masked_kspace).any():
-            print()
         # convert to image space
         images, batches = self.chans_to_batch_dim(fastmri.ifft3c_new_offsets(masked_kspace))
-        if torch.isnan(images).any():
-            print()
         # estimate sensitivities
         ret = self.divide_root_sum_of_squares(
             self.batch_chans_to_chan_dim(self.norm_unet(images), batches)

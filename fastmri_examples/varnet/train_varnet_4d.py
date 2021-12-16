@@ -61,7 +61,8 @@ def cli_main(args):
         lr_step_size=args.lr_step_size,
         lr_gamma=args.lr_gamma,
         weight_decay=args.weight_decay,
-        volume_training=True
+        volume_training=True,
+        mask_center=False
     )
 
     # ------------
@@ -84,7 +85,7 @@ def build_args():
     parser = ArgumentParser()
 
     # basic args
-    path_config = pathlib.Path("fastmri_dirs.yaml")
+    path_config = pathlib.Path(r"C:\Users\follels\Documents\fastMRI\fastmri_dirs.yaml")
     backend = None  # "ddp"  # "ddp"  # "ddp"
     num_gpus = 1 if backend == "ddp" else 1
     batch_size = num_gpus
@@ -135,8 +136,8 @@ def build_args():
     # module config
     parser = VarNetModule.add_model_specific_args(parser)
     parser.set_defaults(
-        num_cascades=4,  # number of unrolled iterations
-        pools=2,  # number of pooling layers for U-Net
+        num_cascades=5,  # number of unrolled iterations
+        pools=3,  # number of pooling layers for U-Net
         chans=4,  # number of top-level channels for U-Net
         sens_pools=3,  # number of pooling layers for sense est. U-Net
         sens_chans=2,  # number of top-level channels for sense est. U-Net
@@ -198,3 +199,7 @@ def run_cli():
 
 if __name__ == "__main__":
     run_cli()
+    # version 6/7: 4 2 4 3 2 -> 316k
+    # version 8:   5 3 4 3 2 -> 1.4M & no mask center for sens est. unet
+    # TODO: Different us pattern for each of the 8 offsets
+    # TODO: Vergleichsmethode: cs eg espirit or enlive (/w and /wo grappa init)

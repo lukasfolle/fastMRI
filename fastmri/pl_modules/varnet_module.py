@@ -16,7 +16,7 @@ from fastmri.losses import ssim3D_loss, combined_loss
 
 from .mri_module import MriModule
 from fastmri.data.cest_test_data import generate_test_sample
-from skimage.metrics import normalized_root_mse
+from skimage.metrics import peak_signal_noise_ratio, structural_similarity, normalized_root_mse
 
 
 class VarNetModule(MriModule):
@@ -47,6 +47,7 @@ class VarNetModule(MriModule):
         lr_gamma: float = 0.1,
         weight_decay: float = 0.0,
         volume_training=False,
+        mask_center = True,
         **kwargs,
     ):
         """
@@ -85,6 +86,7 @@ class VarNetModule(MriModule):
         self.lr_step_size = lr_step_size
         self.lr_gamma = lr_gamma
         self.weight_decay = weight_decay
+        self.mask_center = mask_center
 
         if volume_training:
             self.varnet = VarNet4D(
@@ -93,6 +95,7 @@ class VarNetModule(MriModule):
                 sens_pools=self.sens_pools,
                 chans=self.chans,
                 pools=self.pools,
+                mask_center=self.mask_center
             )
         else:
             self.varnet = VarNet(
@@ -132,7 +135,8 @@ class VarNetModule(MriModule):
             output.unsqueeze(1), target.unsqueeze(1),  # data_range=batch.max_value
         )
         self.log("validation_loss", loss)
-        self.log_zero_filling_mse(batch.masked_kspace, batch.target)
+        if self.current_epoch % 10 == 0:
+            self.log_zero_filling_metrics(batch.masked_kspace, batch.target)
         return {
             "batch_idx": batch_idx,
             "fname": batch.fname,
@@ -170,8 +174,8 @@ class VarNetModule(MriModule):
         prediction = prediction[2, 2][None]
         self.log_image("val/real_cest_prediction", prediction)
 
-    def log_zero_filling_mse(self, kspace, target):
-        mse = 0
+    def log_zero_filling_metrics(self, kspace, target):
+        metrics = {"mse": 0, "ssim": 0, "psnr": 0}
         for offset in range(kspace.shape[2]):
             t = target[:, offset].squeeze()
             k_space_downsampled = kspace[:, :, offset].squeeze()
@@ -180,9 +184,17 @@ class VarNetModule(MriModule):
             volume = fastmri.complex_abs(volume)
             volume = fastmri.rss(volume, dim=0)
             t, volume = transforms.center_crop_to_smallest(t, volume)
-            mse = mse + normalized_root_mse(volume.cpu().numpy(), t.cpu().numpy())
-        mse = mse / kspace.shape[2]
-        self.log("val_metrics/nrmse_zfil", mse)
+            t = t.cpu().numpy()
+            volume = volume.cpu().numpy()
+            metrics["mse"] = metrics["mse"] + normalized_root_mse(t, volume)
+            metrics["psnr"] = metrics["psnr"] + peak_signal_noise_ratio(t, volume, data_range=(t.max() - t.min()))
+            metrics["ssim"] = metrics["ssim"] + structural_similarity(t, volume)
+        metrics["mse"] = metrics["mse"] / kspace.shape[2]
+        metrics["psnr"] = metrics["psnr"] / kspace.shape[2]
+        metrics["ssim"] = metrics["ssim"] / kspace.shape[2]
+        self.log("val_metrics/nrmse_zfil", metrics["mse"])
+        self.log("val_metrics/psnr_zfil", metrics["psnr"])
+        self.log("val_metrics/ssim_zfil", metrics["ssim"])
 
     def configure_optimizers(self):
         optim = torch.optim.Adam(
