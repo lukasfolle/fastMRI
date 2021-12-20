@@ -10,7 +10,7 @@ import os
 from typing import Optional, Sequence, Tuple, Union
 
 import numpy as np
-import sigpy.mri
+from fastmri.data.poisson_dics import poisson
 import torch
 from skimage.transform import resize
 
@@ -106,7 +106,7 @@ class MaskFunc:
 
         with temp_seed(self.rng, seed):
             center_mask, accel_mask, num_low_frequencies = self.sample_mask(
-                shape, offset
+                shape, offset, seed
             )
 
         # combine masks together
@@ -215,6 +215,7 @@ class MaskFunc3D(MaskFunc):
         self,
         shape: Sequence[int],
         offset: Optional[int],
+        seed = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, int]:
         """
         Sample a new k-space mask.
@@ -233,31 +234,13 @@ class MaskFunc3D(MaskFunc):
             mask for the high frequencies of k-space, and 3) the integer count
             of low frequency samples.
         """
-
-        def gaussian(x, mu, sig):
-            return np.exp(-np.power(x - mu, 2.) / (2 * np.power(sig, 2.)))
-
-        pdf = 1 - np.array([gaussian(s - shape[1] // 2, 0, 5) for s in range(shape[1])])
-        central_slices_start = int(shape[1] / 2 - shape[1] * 0.1)
-        central_slices_end = int(shape[1] / 2 + shape[1] * 0.1)
-        pdf[central_slices_start:central_slices_end] = 0
-        pdf = pdf / pdf.sum()
-        slice_accel = 1.5
-        slice_direction_drop = np.random.choice(np.arange(shape[1]), shape[1] - int(np.round(shape[1] / slice_accel)), p=pdf, replace=False)
-
         num_cols = shape[-2]
         center_fraction, acceleration = self.choose_acceleration()
         num_low_frequencies = round(num_cols * center_fraction)
-        # center_mask = self.reshape_mask(
-        #     self.calculate_center_mask(shape, num_low_frequencies), shape
-        # )
-        #
-        # center_mask = torch.tile(center_mask.squeeze(), (shape[-3], 1)).reshape((1, 1, shape[-3], shape[-2], 1))
-        # center_mask[:, :, slice_direction_drop] = 0
 
         acceleration_mask = self.reshape_mask(
             self.calculate_acceleration_mask_3D(
-                num_cols, acceleration, offset, num_low_frequencies, shape
+                num_cols, acceleration, offset, num_low_frequencies, shape, seed
             ),
             shape
         )
@@ -273,7 +256,8 @@ class MaskFunc3D(MaskFunc):
         acceleration: int,
         offset: Optional[int],
         num_low_frequencies: int,
-        shape
+        shape,
+        seed
     ) -> np.ndarray:
         """
         Produce mask for non-central acceleration lines.
@@ -495,7 +479,6 @@ class EquispacedMaskFractionFunc3D(MaskFunc3D):
 class PoissonMask3D(MaskFunc3D):
     def __init__(self, accelerations, allow_any_combination=False, seed=None):
         super().__init__([0], accelerations, allow_any_combination, seed)
-        self.seed = seed
 
     def calculate_acceleration_mask_3D(
         self,
@@ -503,10 +486,12 @@ class PoissonMask3D(MaskFunc3D):
         acceleration: int,
         offset: Optional[int],
         num_low_frequencies: int,
-        shape
+        shape,
+        seed,
     ) -> np.ndarray:
-        poisson_mask = sigpy.mri.poisson(shape[1:-1], accel=acceleration, seed=self.seed)
-        poisson_mask = np.abs(poisson_mask)[None]
+        if seed is not None:
+            seed = np.sum((offset, *seed))
+        poisson_mask = np.abs(poisson(shape[1:-1], accel=acceleration, seed=seed))[None]
         return poisson_mask
 
 

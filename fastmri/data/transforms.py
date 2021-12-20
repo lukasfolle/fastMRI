@@ -638,8 +638,13 @@ class VarNetDataTransformVolume4D(VarNetDataTransform):
     ) -> Tuple[torch.Tensor, torch.Tensor, int]:
         shape = (1, data.shape[-4], data.shape[-2], data.shape[-1])
         masks = torch.zeros((data.shape[1], *shape)).squeeze()
+        num_low_frequencies = None
         for offset in range(data.shape[1]):
-            mask, num_low_frequencies = mask_func(shape, offset, seed)
+            if seed is None:
+                seed_offset = None
+            else:
+                seed_offset = (offset, *seed)
+            mask, num_low_frequencies = mask_func(shape, offset, seed_offset)
             mask = torch.stack((mask, mask), -1)
             masks[offset] = mask.squeeze()
         masks = masks.unsqueeze(0).unsqueeze(-3)
