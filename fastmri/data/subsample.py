@@ -10,6 +10,7 @@ import os
 from typing import Optional, Sequence, Tuple, Union
 
 import numpy as np
+import sigpy.mri
 import torch
 from skimage.transform import resize
 
@@ -261,20 +262,10 @@ class MaskFunc3D(MaskFunc):
             shape
         )
         center_mask = torch.zeros_like(acceleration_mask)
-        center_mask[:, center_mask.shape[1] // 2 - 1:center_mask.shape[1] // 2 + 1,
-                    center_mask.shape[2] // 2 - 1:center_mask.shape[2] // 2 + 1] = 1.0
         return center_mask, acceleration_mask, num_low_frequencies
 
     def reshape_mask(self, mask: np.ndarray, shape: Sequence[int]) -> torch.Tensor:
-        """Reshape mask to desired output shape."""
-        num_slices = shape[-3]
-        num_cols = shape[-2]
-        mask_shape = [1 for _ in shape]
-        mask_shape[-2] = num_cols
-        if len(mask.squeeze().shape) > 1:
-            mask_shape[-3] = num_slices
-
-        return torch.from_numpy(mask.reshape(*mask_shape).astype(np.float32))
+        return torch.from_numpy(mask.astype(np.float32))
 
     def calculate_acceleration_mask_3D(
         self,
@@ -501,6 +492,24 @@ class EquispacedMaskFractionFunc3D(MaskFunc3D):
         return mask
 
 
+class PoissonMask3D(MaskFunc3D):
+    def __init__(self, accelerations, allow_any_combination=False, seed=None):
+        super().__init__([0], accelerations, allow_any_combination, seed)
+        self.seed = seed
+
+    def calculate_acceleration_mask_3D(
+        self,
+        num_cols: int,
+        acceleration: int,
+        offset: Optional[int],
+        num_low_frequencies: int,
+        shape
+    ) -> np.ndarray:
+        poisson_mask = sigpy.mri.poisson(shape[1:-1], accel=acceleration, seed=self.seed)
+        poisson_mask = np.abs(poisson_mask)[None]
+        return poisson_mask
+
+
 class MagicMaskFunc(MaskFunc):
     """
     Masking function for exploiting conjugate symmetry via offset-sampling.
@@ -662,5 +671,7 @@ def create_mask_for_mask_type(
         return MagicMaskFunc(center_fractions, accelerations)
     elif mask_type_str == "magic_fraction":
         return MagicMaskFractionFunc(center_fractions, accelerations)
+    elif mask_type_str == "poisson_3d":
+        return PoissonMask3D(accelerations)
     else:
         raise ValueError(f"{mask_type_str} not supported")

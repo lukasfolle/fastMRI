@@ -119,7 +119,7 @@ class ConvBlock(nn.Module):
     instance normalization, LeakyReLU activation and dropout.
     """
 
-    def __init__(self, in_chans: int, out_chans: int, drop_prob: float, stride: int = 1):
+    def __init__(self, in_chans: int, out_chans: int, drop_prob: float = 0, stride: int = 1):
         """
         Args:
             in_chans: Number of channels in the input.
@@ -190,3 +190,10 @@ class TransposeConvBlock(nn.Module):
             Output tensor of shape `(N, out_chans, D*2, H*2, W*2)`.
         """
         return self.layers(image)
+
+
+if __name__ == "__main__":
+    # torch.Size([1, 1, 8, 8, 160, 92])
+    unet = Unet4D(1, 1, chans=4, num_pool_layers=2)
+    ret = unet(torch.rand((1, 1, 8, 8, 160, 92)))
+    print(ret.shape)

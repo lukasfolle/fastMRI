@@ -145,6 +145,7 @@ class VarNetModule(MriModule):
             "output": output,
             "mask": batch.mask,
             "target": target,
+            "masked_kspace": batch.masked_kspace,
             "val_loss": loss
         }
 
@@ -167,12 +168,12 @@ class VarNetModule(MriModule):
 
     def validation_epoch_end(self, val_logs):
         super().validation_epoch_end(val_logs)
-        kspace, mask, num_low_frequencies = generate_test_sample(self.device)
-        prediction = self(kspace, mask, num_low_frequencies)
-        prediction = prediction.squeeze().cpu().numpy()
-        prediction = (prediction - prediction.min()) / (prediction.max() - prediction.min() + 1e-6)
-        prediction = prediction[2, 2][None]
-        self.log_image("val/real_cest_prediction", prediction)
+        # kspace, mask, num_low_frequencies = generate_test_sample(self.device)
+        # prediction = self(kspace, mask, num_low_frequencies)
+        # prediction = prediction.squeeze().cpu().numpy()
+        # prediction = (prediction - prediction.min()) / (prediction.max() - prediction.min() + 1e-6)
+        # prediction = prediction[2, 2][None]
+        # self.log_image("val/real_cest_prediction", prediction)
 
     def log_zero_filling_metrics(self, kspace, target):
         metrics = {"mse": 0, "ssim": 0, "psnr": 0}

@@ -14,6 +14,7 @@ import numpy as np
 import pytorch_lightning as pl
 import torch
 from fastmri import evaluate
+from fastmri.data import transforms
 from torchmetrics.metric import Metric
 from skimage.metrics import peak_signal_noise_ratio, structural_similarity, normalized_root_mse
 
@@ -77,12 +78,24 @@ class MriModule(pl.LightningModule):
             "max_value",
             "output",
             "target",
+            "masked_kspace",
             "val_loss",
         ):
             if k not in val_logs.keys():
                 raise RuntimeError(
                     f"Expected key {k} in dict returned by validation_step."
                 )
+
+        def reco(kspace, target):
+            offset = 0
+            k_space_downsampled = kspace[:, offset].squeeze()
+            k_space_downsampled = torch.view_as_real(k_space_downsampled[..., 0] + 1j * k_space_downsampled[..., 1])
+            volume = fastmri.ifft3c(k_space_downsampled)
+            volume = fastmri.complex_abs(volume)
+            volume = fastmri.rss(volume, dim=0)
+            _, volume = transforms.center_crop_to_smallest(target[offset], volume)
+            return volume.cpu().numpy()
+
 
         target = val_logs["target"].cpu().numpy()
         target = (target - target.min()) / (target.max() - target.min() + 1e-6)
@@ -94,14 +107,8 @@ class MriModule(pl.LightningModule):
 
         if val_logs["output"].ndim == 2:
             val_logs["output"] = val_logs["output"].unsqueeze(0)
-        # Removed for volume training
-        # elif val_logs["output"].ndim != 3:
-        #     raise RuntimeError("Unexpected output size from validation_step.")
         if val_logs["target"].ndim == 2:
             val_logs["target"] = val_logs["target"].unsqueeze(0)
-        # Removed for volume training
-        # elif val_logs["target"].ndim != 3:
-        #     raise RuntimeError("Unexpected output size from validation_step.")
 
         # pick a set of images to log if we don't have one already
         if self.val_log_indices is None:
@@ -121,54 +128,21 @@ class MriModule(pl.LightningModule):
                 output = (output - output.min()) / (output.max() - output.min() + 1e-6)
                 target = (target - target.min()) / (target.max() - target.min())
                 error = (error - error.min()) / (error.max() - error.min())
-                center_slice = target.shape[1] // 2
+                default_reco = reco(val_logs["masked_kspace"][i], val_logs["target"][i])
+                default_reco = (default_reco - default_reco.min()) / (default_reco.max() - default_reco.min())
                 self.log_image(f"{key}/target", target[:, 2, 2, ...])
                 self.log_image(f"{key}/reconstruction", output[:, 2, 2, ...])
                 self.log_image(f"{key}/error", error[:, 2, 2, ...])
+                self.log_image(f"{key}/default_reco", default_reco[2][None])
                 if "mask" in val_logs.keys():
                     mask = val_logs["mask"][i]
                     mask = mask / mask.max()
-                    # if len(mask.squeeze().shape) > 1:
-                    #     mask = mask.squeeze().unsqueeze(0)
-                    #     mask = mask[:, 2, :, :, 0]
-                    # else:
-                    #     mask = mask.squeeze()
-                    #     mask = mask.tile((mask.shape[0], 1)).unsqueeze(0)
-                    mask = mask[0, 0, :, 0, :, 0]
+                    mask = mask.squeeze()[0, ..., 0]
                     self.log_image(f"{key}/mask", mask[None])
-        # # compute evaluation metrics
-        # mse_vals = defaultdict(dict)
-        # target_norms = defaultdict(dict)
-        # ssim_vals = defaultdict(dict)
-        # max_vals = dict()
-        # for i, fname in enumerate(val_logs["fname"]):
-        #     slice_num = int(val_logs["slice_num"][i].cpu())
-        #     maxval = val_logs["max_value"][i].cpu().numpy()
-        #     output = val_logs["output"][i].cpu().numpy()
-        #     target = val_logs["target"][i].cpu().numpy()
-        #
-        #     mse_vals[fname][slice_num] = torch.tensor(
-        #         evaluate.mse(target, output)
-        #     ).view(1)
-        #     target_norms[fname][slice_num] = torch.tensor(
-        #         evaluate.mse(target, np.zeros_like(target))
-        #     ).view(1)
-        #     # ssim_vals[fname][slice_num] = torch.tensor(
-        #     #     evaluate.ssim(target[None, ...], output[None, ...], maxval=maxval)
-        #     # ).view(1)
-        #     # ssim_vals[fname][slice_num] = torch.tensor(
-        #     #     evaluate.ssim3D(target[None, ...], output[None, ...])
-        #     # ).view(1)
-        #
-        #     max_vals[fname] = maxval
 
             return {
-            "val_loss": val_logs["val_loss"],
-            # "mse_vals": dict(mse_vals),
-            # "target_norms": dict(target_norms),
-            # # "ssim_vals": dict(ssim_vals),
-            # "max_vals": max_vals,
-        }
+                "val_loss": val_logs["val_loss"],
+            }
 
     def log_image(self, name, image):
         self.logger.experiment.add_image(name, image, global_step=self.global_step)

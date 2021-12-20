@@ -24,19 +24,19 @@ def cli_main(args):
     # data
     # ------------
     # this creates a k-space mask for transforming input data
-    # mask = create_mask_for_mask_type("equispaced_fraction_3d", args.center_fractions, args.accelerations)
+    mask = create_mask_for_mask_type("poisson_3d", args.center_fractions, args.accelerations)
     # use random masks for train transform, fixed masks for val transform
-    # train_transform = VarNetDataTransformVolume4D(mask_func=mask, use_seed=False)
-    # val_transform = VarNetDataTransformVolume4D(mask_func=mask)
-    # test_transform = VarNetDataTransformVolume4D()
+    train_transform = VarNetDataTransformVolume4D(mask_func=mask, use_seed=False)
+    val_transform = VarNetDataTransformVolume4D(mask_func=mask)
+    test_transform = VarNetDataTransformVolume4D()
 
     # ptl data module - this handles data loaders
     data_module = FastMriDataModule(
         data_path=args.data_path,
         challenge=args.challenge,
-        train_transform=None,
-        val_transform=None,
-        test_transform=None,
+        train_transform=train_transform,
+        val_transform=val_transform,
+        test_transform=test_transform,
         test_split=args.test_split,
         test_path=args.test_path,
         sample_rate=args.sample_rate,
@@ -105,7 +105,7 @@ def build_args():
     parser.add_argument(
         "--center_fractions",
         nargs="+",
-        default=[0.08],
+        default=[0.0],
         type=float,
         help="Number of center lines to use in mask",
     )
@@ -136,8 +136,8 @@ def build_args():
     # module config
     parser = VarNetModule.add_model_specific_args(parser)
     parser.set_defaults(
-        num_cascades=5,  # number of unrolled iterations
-        pools=3,  # number of pooling layers for U-Net
+        num_cascades=4,  # number of unrolled iterations
+        pools=2,  # number of pooling layers for U-Net
         chans=4,  # number of top-level channels for U-Net
         sens_pools=3,  # number of pooling layers for sense est. U-Net
         sens_chans=2,  # number of top-level channels for sense est. U-Net
@@ -201,5 +201,7 @@ if __name__ == "__main__":
     run_cli()
     # version 6/7: 4 2 4 3 2 -> 316k
     # version 8:   5 3 4 3 2 -> 1.4M & no mask center for sens est. unet
-    # TODO: Different us pattern for each of the 8 offsets
+    # version 9:   4 2 4 3 2 -> 320k & no mask center for sens est. unet + some conv layers at end
+    # version 10:  4 2 4 3 2, changed us pattern to poisson disc, R=2
+
     # TODO: Vergleichsmethode: cs eg espirit or enlive (/w and /wo grappa init)

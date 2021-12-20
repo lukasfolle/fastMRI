@@ -15,6 +15,8 @@ import torch.nn.functional as F
 from fastmri.data import transforms
 
 from fastmri.models.unet_4d import Unet4D
+from fastmri.models.unet_4d import ConvBlock
+from fastmri.models.convnd import Conv4d
 
 
 class NormUnet(nn.Module):
@@ -265,6 +267,12 @@ class VarNet4D(nn.Module):
             [VarNetBlock(NormUnet(chans, pools)) for _ in range(num_cascades)]
         )
 
+        # self.final_layers = nn.Sequential(
+        #     ConvBlock(1, 4),
+        #     ConvBlock(4, 4),
+        #     Conv4d(4, 1, kernel_size=3, padding=1, bias=False)
+        # )
+
     def forward(
         self,
         masked_kspace: torch.Tensor,
@@ -277,8 +285,12 @@ class VarNet4D(nn.Module):
 
         for cascade in self.cascades:
             kspace_pred = cascade(kspace_pred, masked_kspace, mask, sens_maps)
-
         return fastmri.rss(fastmri.complex_abs(fastmri.ifft3c(kspace_pred)), dim=1)
+        # image = fastmri.rss(fastmri.complex_abs(fastmri.ifft3c(kspace_pred)), dim=1)
+        # image = image.unsqueeze(0)
+        # image = self.final_layers(image)
+        # image = image.squeeze(0)
+        # return image
 
 
 class VarNetBlock(nn.Module):

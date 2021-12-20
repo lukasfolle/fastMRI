@@ -625,7 +625,7 @@ class CESTDataset(VolumeDataset):
                          volume_sample_rate, dataset_cache_file, num_cols, cache_path)
         self.num_offsets = num_offsets
         # Undersampling mask is fixed for now
-        self.apply_grappa = True
+        self.apply_grappa = False
 
     def apply_virtual_cest_contrast(self, kspace, target, offset: int):
         random_num = 1e3 * np.random.rand() + 1e4
@@ -638,6 +638,7 @@ class CESTDataset(VolumeDataset):
         x_y_extend = 320 // downsampling_factor
         z_extend = 8
         target, k_space_downsampled = self.reco(kspace, downsampling_factor, z_extend)
+        mask = None
         if self.apply_grappa:
             mask = create_mask_for_mask_type("equispaced_fraction_3d", [0.08], [2]).calculate_acceleration_mask_3D(
                 None, None, None, None, [1, 8, k_space_downsampled.shape[-2], 1])
@@ -739,21 +740,23 @@ class CESTDataset(VolumeDataset):
 if __name__ == "__main__":
     from fastmri.data.transforms import VarNetDataTransformVolume4D
     from fastmri.data.subsample import create_mask_for_mask_type
+    import matplotlib.pyplot as plt
+    from utils.matplotlib_viewer import scroll_slices
     from tqdm import trange
 
-    # mask = create_mask_for_mask_type("equispaced_fraction_3d", [0.08], [2])
-    # transform = VarNetDataTransformVolume4D(mask_func=mask, use_seed=False)
-    # # cest_ds = CESTDataset("/home/woody/iwi5/iwi5044h/fastMRI/multicoil_train", "multicoil", transform, use_dataset_cache=False, cache_path="/home/woody/iwi5/iwi5044h/Code/fastMRI/cache_test")
-    # cest_ds = CESTDataset(r"E:\Lukas\multicoil_val", "multicoil", transform=None, use_dataset_cache=False,
-    #                       cache_path=r"C:\Users\follels\Documents\fastMRI\cache\cache_val")
-    #
-    # for i in trange(len(cest_ds)):
-    #     item = cest_ds.__getitem__(i)
-    #     print(f"\n\nItem {i}")
-    #     for offset in range(item.target.shape[0]):
+    mask = create_mask_for_mask_type("poisson_3d", [0], [2])
+    transform = VarNetDataTransformVolume4D(mask_func=mask, use_seed=False)
+    # cest_ds = CESTDataset("/home/woody/iwi5/iwi5044h/fastMRI/multicoil_train", "multicoil", transform, use_dataset_cache=False, cache_path="/home/woody/iwi5/iwi5044h/Code/fastMRI/cache_test")
+    cest_ds = CESTDataset(r"E:\Lukas\multicoil_val", "multicoil", transform=transform, use_dataset_cache=False,
+                          cache_path=r"C:\Users\follels\Documents\fastMRI\cache\cache_val")
+
+    for i in trange(len(cest_ds)):
+        item = cest_ds.__getitem__(i)
+        print(f"\n\nItem {i}")
+        for offset in range(item.target.shape[0]):
             # mask = item.mask.numpy().squeeze()
             # vol = item.target[offset].numpy().squeeze()
-            # mask = mask[0, offset, :, 0, :, 0]
+            # mask = mask[offset, ..., 0]
             # plt.imshow(mask)
             # plt.title(f"Sample {i}, offset {offset}")
             # plt.show()
@@ -769,6 +772,7 @@ if __name__ == "__main__":
             # volume = (volume - volume.min()) / (volume.max() - volume.min())
             # volume = np.moveaxis(volume.numpy(), 0, -1)
             # scroll_slices(volume, title=f"Sample {i} Offset {offset}")
+            pass
 
 
     #         print(f"Mean target: {np.mean(vol):.3g} Mean kspace {np.mean(item.masked_kspace[offset].numpy().squeeze()):.3g}")
@@ -783,5 +787,5 @@ if __name__ == "__main__":
     # print(ret.shape)
     # print(f"GPU GB allocated {torch.cuda.max_memory_allocated() / 10**9}")
 
-    rcd = RealCESTData()
-    print(rcd.__getitem__(0)[0].shape)
+    # rcd = RealCESTData()
+    # print(rcd.__getitem__(0)[0].shape)
