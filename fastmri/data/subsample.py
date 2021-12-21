@@ -526,6 +526,7 @@ class VariableDensitiyMask3D(MaskFunc3D):
         shape,
         seed,
     ) -> np.ndarray:
+        self.rng_new = np.random.default_rng(seed)
         mask = self.draw_samples(shape, acceleration)
         return mask[None]
 

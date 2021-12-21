@@ -158,7 +158,6 @@ def build_args():
         default_root_dir=default_root_dir,  # directory for logs and checkpoints
         max_epochs=1000,  # max number of epochs
         num_workers=4,
-        # overfit_batches=1,
         log_every_n_steps=10,
     )
 
@@ -202,6 +201,6 @@ if __name__ == "__main__":
     # version 6/7: 4 2 4 3 2 -> 316k
     # version 8:   5 3 4 3 2 -> 1.4M & no mask center for sens est. unet
     # version 9:   4 2 4 3 2 -> 320k & no mask center for sens est. unet + some conv layers at end
-    # version 10:  4 2 4 3 2, changed us pattern to poisson disc, R=4
+    # version 10/11:  4 2 4 3 2, changed us pattern to poisson disc, R~=4
 
     # TODO: Vergleichsmethode: cs eg espirit or enlive
