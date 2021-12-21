@@ -130,10 +130,10 @@ class MriModule(pl.LightningModule):
                 error = (error - error.min()) / (error.max() - error.min())
                 default_reco = reco(val_logs["masked_kspace"][i], val_logs["target"][i])
                 default_reco = (default_reco - default_reco.min()) / (default_reco.max() - default_reco.min())
-                self.log_image(f"{key}/target", target[:, 2, 2, ...])
-                self.log_image(f"{key}/reconstruction", output[:, 2, 2, ...])
-                self.log_image(f"{key}/error", error[:, 2, 2, ...])
-                self.log_image(f"{key}/default_reco", default_reco[2][None])
+                self.log_image(f"{key}/target", target[:, 0, target.shape[2] // 2, ...])
+                self.log_image(f"{key}/reconstruction", output[:, 0, output.shape[2] // 2, ...])
+                self.log_image(f"{key}/error", error[:, 0, error.shape[2] // 2, ...])
+                self.log_image(f"{key}/default_reco", default_reco[default_reco.shape[0] // 2][None])
                 if "mask" in val_logs.keys():
                     mask = val_logs["mask"][i]
                     mask = mask / mask.max()

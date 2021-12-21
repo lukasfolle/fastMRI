@@ -744,8 +744,8 @@ if __name__ == "__main__":
     from utils.matplotlib_viewer import scroll_slices
     from tqdm import trange
 
-    mask = create_mask_for_mask_type("poisson_3d", [0], [2])
-    transform = VarNetDataTransformVolume4D(mask_func=mask, use_seed=False)
+    mask = create_mask_for_mask_type("variabledensity3d", [0], [2])
+    transform = VarNetDataTransformVolume4D(mask_func=mask, use_seed=True)
     # cest_ds = CESTDataset("/home/woody/iwi5/iwi5044h/fastMRI/multicoil_train", "multicoil", transform, use_dataset_cache=False, cache_path="/home/woody/iwi5/iwi5044h/Code/fastMRI/cache_test")
     cest_ds = CESTDataset(r"E:\Lukas\multicoil_val", "multicoil", transform=transform, use_dataset_cache=False,
                           cache_path=r"C:\Users\follels\Documents\fastMRI\cache\cache_val")
@@ -753,26 +753,26 @@ if __name__ == "__main__":
     for i in trange(len(cest_ds)):
         item = cest_ds.__getitem__(i)
         print(f"\n\nItem {i}")
-        for offset in range(item.target.shape[0]):
-            # mask = item.mask.numpy().squeeze()
-            # vol = item.target[offset].numpy().squeeze()
-            # mask = mask[offset, ..., 0]
-            # plt.imshow(mask)
-            # plt.title(f"Sample {i}, offset {offset}")
-            # plt.show()
-            # vol = (vol - vol.min()) / (vol.max() - vol.min())
-            # vol = np.moveaxis(vol, 0, -1)
-            # scroll_slices(vol, title=f"Sample {i} Offset {offset}")
-            #
-            # k_space_downsampled = item.masked_kspace[:, offset]
-            # k_space_downsampled = torch.view_as_real(k_space_downsampled[..., 0] + 1j * k_space_downsampled[..., 1])
-            # volume = fastmri.ifft3c(k_space_downsampled)
-            # volume = fastmri.complex_abs(volume)
-            # volume = fastmri.rss(volume, dim=0)
-            # volume = (volume - volume.min()) / (volume.max() - volume.min())
-            # volume = np.moveaxis(volume.numpy(), 0, -1)
-            # scroll_slices(volume, title=f"Sample {i} Offset {offset}")
-            pass
+        # for offset in range(item.target.shape[0]):
+        offset = 0
+        mask = item.mask.numpy().squeeze()
+        vol = item.target[offset].numpy().squeeze()
+        mask = mask[offset, ..., 0]
+        plt.imshow(mask)
+        plt.title(f"Sample {i}, offset {offset}")
+        plt.show()
+        vol = (vol - vol.min()) / (vol.max() - vol.min())
+        vol = np.moveaxis(vol, 0, -1)
+        scroll_slices(vol, title=f"Sample {i} Offset {offset}")
+
+        k_space_downsampled = item.masked_kspace[:, offset]
+        k_space_downsampled = torch.view_as_real(k_space_downsampled[..., 0] + 1j * k_space_downsampled[..., 1])
+        volume = fastmri.ifft3c(k_space_downsampled)
+        volume = fastmri.complex_abs(volume)
+        volume = fastmri.rss(volume, dim=0)
+        volume = (volume - volume.min()) / (volume.max() - volume.min())
+        volume = np.moveaxis(volume.numpy(), 0, -1)
+        scroll_slices(volume, title=f"Sample {i} Offset {offset}")
 
 
     #         print(f"Mean target: {np.mean(vol):.3g} Mean kspace {np.mean(item.masked_kspace[offset].numpy().squeeze()):.3g}")

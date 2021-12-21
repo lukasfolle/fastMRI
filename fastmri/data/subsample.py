@@ -495,6 +495,30 @@ class PoissonMask3D(MaskFunc3D):
         return poisson_mask
 
 
+class VariableDensitiyMask3D(MaskFunc3D):
+    def __init__(self, accelerations, allow_any_combination=False, seed=None):
+        super().__init__([0], accelerations, allow_any_combination, seed)
+        self.rng_new = np.random.default_rng(seed)
+
+    def calculate_acceleration_mask_3D(
+        self,
+        num_cols: int,
+        acceleration: int,
+        offset: Optional[int],
+        num_low_frequencies: int,
+        shape,
+        seed,
+    ) -> np.ndarray:
+        s = self.rng_new.multivariate_normal([shape[1] // 2, shape[2] // 2], [[1.5, 0], [0, 200]], 300)
+        s[:, 0] = np.clip(s[:, 0], 0, shape[1] - 1)
+        s[:, 1] = np.clip(s[:, 1], 0, shape[2] - 1)
+        s = s.astype(int)
+        mask = np.zeros(shape[1:-1], dtype=bool)
+        mask[s[:, 0], s[:, 1]] = True
+        R = 1 / (np.sum(mask) / (mask.shape[0] * mask.shape[1]))
+        return mask[None]
+
+
 class MagicMaskFunc(MaskFunc):
     """
     Masking function for exploiting conjugate symmetry via offset-sampling.
@@ -658,5 +682,7 @@ def create_mask_for_mask_type(
         return MagicMaskFractionFunc(center_fractions, accelerations)
     elif mask_type_str == "poisson_3d":
         return PoissonMask3D(accelerations)
+    elif mask_type_str == "variabledensity3d":
+        return VariableDensitiyMask3D(accelerations)
     else:
         raise ValueError(f"{mask_type_str} not supported")

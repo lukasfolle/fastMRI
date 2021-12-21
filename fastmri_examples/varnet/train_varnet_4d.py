@@ -24,7 +24,7 @@ def cli_main(args):
     # data
     # ------------
     # this creates a k-space mask for transforming input data
-    mask = create_mask_for_mask_type("poisson_3d", args.center_fractions, args.accelerations)
+    mask = create_mask_for_mask_type("variabledensity3d", args.center_fractions, args.accelerations)
     # use random masks for train transform, fixed masks for val transform
     train_transform = VarNetDataTransformVolume4D(mask_func=mask, use_seed=False)
     val_transform = VarNetDataTransformVolume4D(mask_func=mask)
@@ -112,7 +112,7 @@ def build_args():
     parser.add_argument(
         "--accelerations",
         nargs="+",
-        default=[2],
+        default=[4],
         type=int,
         help="Acceleration rates to use for masks",
     )
@@ -202,6 +202,6 @@ if __name__ == "__main__":
     # version 6/7: 4 2 4 3 2 -> 316k
     # version 8:   5 3 4 3 2 -> 1.4M & no mask center for sens est. unet
     # version 9:   4 2 4 3 2 -> 320k & no mask center for sens est. unet + some conv layers at end
-    # version 10:  4 2 4 3 2, changed us pattern to poisson disc, R=2
+    # version 10:  4 2 4 3 2, changed us pattern to poisson disc, R=4
 
-    # TODO: Vergleichsmethode: cs eg espirit or enlive (/w and /wo grappa init)
+    # TODO: Vergleichsmethode: cs eg espirit or enlive
