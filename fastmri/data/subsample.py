@@ -10,7 +10,6 @@ import os
 from typing import Optional, Sequence, Tuple, Union
 
 import numpy as np
-from fastmri.data.poisson_dics import poisson
 import torch
 from skimage.transform import resize
 
@@ -499,6 +498,24 @@ class VariableDensitiyMask3D(MaskFunc3D):
     def __init__(self, accelerations, allow_any_combination=False, seed=None):
         super().__init__([0], accelerations, allow_any_combination, seed)
         self.rng_new = np.random.default_rng(seed)
+        self.num_samples = 300
+
+    def draw_samples(self, shape, acceleration):
+        tol = 0.1
+        while True:
+            s = self.rng_new.multivariate_normal([shape[1] // 2, shape[2] // 2], [[1.5, 0], [0, 200]], self.num_samples)
+            s[:, 0] = np.clip(s[:, 0], 0, shape[1] - 1)
+            s[:, 1] = np.clip(s[:, 1], 0, shape[2] - 1)
+            s = s.astype(int)
+            mask = np.zeros(shape[1:-1], dtype=bool)
+            mask[s[:, 0], s[:, 1]] = True
+            R = 1 / (np.sum(mask) / (mask.shape[0] * mask.shape[1]))
+            if R > acceleration:
+                self.num_samples += 50
+            elif R < acceleration:
+                self.num_samples -= 50
+            if np.abs(acceleration - R) < tol:
+                return mask
 
     def calculate_acceleration_mask_3D(
         self,
@@ -509,13 +526,7 @@ class VariableDensitiyMask3D(MaskFunc3D):
         shape,
         seed,
     ) -> np.ndarray:
-        s = self.rng_new.multivariate_normal([shape[1] // 2, shape[2] // 2], [[1.5, 0], [0, 200]], 300)
-        s[:, 0] = np.clip(s[:, 0], 0, shape[1] - 1)
-        s[:, 1] = np.clip(s[:, 1], 0, shape[2] - 1)
-        s = s.astype(int)
-        mask = np.zeros(shape[1:-1], dtype=bool)
-        mask[s[:, 0], s[:, 1]] = True
-        R = 1 / (np.sum(mask) / (mask.shape[0] * mask.shape[1]))
+        mask = self.draw_samples(shape, acceleration)
         return mask[None]
 
 
