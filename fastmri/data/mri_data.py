@@ -488,9 +488,8 @@ class VolumeDataset(torch.utils.data.Dataset):
         kspace_center_y = kspace.shape[-2] // 2
         kspace_center_x = kspace.shape[-1] // 2
         new_kspace_extend_z_half = z_extend // 2
-        new_kspace_extend_z_half = z_extend // 2
-        new_kspace_extend_y_half = kspace.shape[-2] // (down_sampling_factor * 2)
-        new_kspace_extend_x_half = kspace.shape[-1] // (down_sampling_factor * 2)
+        new_kspace_extend_y_half = int(kspace.shape[-2] // (down_sampling_factor * 2))
+        new_kspace_extend_x_half = int(kspace.shape[-1] // (down_sampling_factor * 2))
         k_space_downsampled = k_space_downsampled[:,
                               kspace_center_z - new_kspace_extend_z_half:kspace_center_z + new_kspace_extend_z_half,
                               kspace_center_y - new_kspace_extend_y_half:kspace_center_y + new_kspace_extend_y_half,
@@ -634,7 +633,7 @@ class CESTDataset(VolumeDataset):
         return kspace, target
 
     def generate_offset(self, kspace, hf, metadata, fname, offset, grappa_weights=None):
-        downsampling_factor = 4
+        downsampling_factor = 2.5  # 3.48
         x_y_extend = 320 // downsampling_factor
         z_extend = 8
         target, k_space_downsampled = self.reco(kspace, downsampling_factor, z_extend)
@@ -744,7 +743,7 @@ if __name__ == "__main__":
     from utils.matplotlib_viewer import scroll_slices
     from tqdm import trange
 
-    mask = create_mask_for_mask_type("variabledensity3d", [0], [2])
+    mask = create_mask_for_mask_type("variabledensity3d", [0], [6])
     transform = VarNetDataTransformVolume4D(mask_func=mask, use_seed=True)
     # cest_ds = CESTDataset("/home/woody/iwi5/iwi5044h/fastMRI/multicoil_train", "multicoil", transform, use_dataset_cache=False, cache_path="/home/woody/iwi5/iwi5044h/Code/fastMRI/cache_test")
     cest_ds = CESTDataset(r"E:\Lukas\multicoil_val", "multicoil", transform=transform, use_dataset_cache=False,
@@ -774,16 +773,14 @@ if __name__ == "__main__":
         volume = np.moveaxis(volume.numpy(), 0, -1)
         scroll_slices(volume, title=f"Sample {i} Offset {offset}")
 
-
-    #         print(f"Mean target: {np.mean(vol):.3g} Mean kspace {np.mean(item.masked_kspace[offset].numpy().squeeze()):.3g}")
-
+    # from fastmri.models.varnet_4d import VarNet4D
     # varnet = VarNet4D(4, 2, 4, 3, 2).to("cuda")
     # item = cest_ds.__getitem__(0)
     # print(item.masked_kspace.shape)
     # print(item.mask.shape)
     # print(item.target.shape)
     # print(item.num_low_frequencies)
-    # ret = varnet(item.masked_kspace.unsqueeze(0).to("cuda"), item.mask.to("cuda"), item.num_low_frequencies)
+    # ret = varnet(item.masked_kspace.unsqueeze(0).to("cuda"), item.mask.unsqueeze(0).to("cuda"), item.num_low_frequencies)
     # print(ret.shape)
     # print(f"GPU GB allocated {torch.cuda.max_memory_allocated() / 10**9}")
 
