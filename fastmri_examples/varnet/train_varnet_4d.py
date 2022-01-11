@@ -10,6 +10,9 @@ import sys
 import pathlib
 from argparse import ArgumentParser
 
+path = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+sys.path.insert(0, path)
+
 import pytorch_lightning as pl
 from fastmri.data.mri_data import fetch_dir
 from fastmri.data.subsample import create_mask_for_mask_type
@@ -62,7 +65,9 @@ def cli_main(args):
         lr_gamma=args.lr_gamma,
         weight_decay=args.weight_decay,
         volume_training=True,
-        mask_center=False
+        mask_center=False,
+        accelerations=args.accelerations,
+        loss=args.loss
     )
 
     # ------------
@@ -112,9 +117,16 @@ def build_args():
     parser.add_argument(
         "--accelerations",
         nargs="+",
-        default=[4],
+        default=[6],
         type=int,
         help="Acceleration rates to use for masks",
+    )
+
+    parser.add_argument(
+        "--loss",
+        default="combined",
+        type=str,
+        help="Loss function to use",
     )
 
     # data config
@@ -159,6 +171,7 @@ def build_args():
         max_epochs=1000,  # max number of epochs
         num_workers=4,
         log_every_n_steps=10,
+        # precision=16,
     )
 
     args = parser.parse_args()
@@ -183,6 +196,8 @@ def build_args():
         ckpt_list = sorted(checkpoint_dir.glob("*.ckpt"), key=os.path.getmtime)
         if ckpt_list:
             args.resume_from_checkpoint = str(ckpt_list[-1])
+    print("Not resuming from checkpoint!")
+    args.resume_from_checkpoint = None
 
     return args
 
@@ -201,6 +216,7 @@ if __name__ == "__main__":
     # version 6/7: 4 2 4 3 2 -> 316k
     # version 8:   5 3 4 3 2 -> 1.4M & no mask center for sens est. unet
     # version 9:   4 2 4 3 2 -> 320k & no mask center for sens est. unet + some conv layers at end
-    # version 10/11:  4 2 4 3 2, changed us pattern to poisson disc, R~=4
+    # version 10/11:  4 2 4 3 2, changed us pattern to gaussian, R~=4
 
     # TODO: Vergleichsmethode: cs eg espirit or enlive
+    # TODO: Increase offsets -> maybe init k-space with valid values over offset dim for all offsets

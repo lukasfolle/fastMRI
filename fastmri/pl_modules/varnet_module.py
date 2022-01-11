@@ -12,7 +12,7 @@ import torch
 import torch.nn.functional as F
 from fastmri.data import transforms
 from fastmri.models import VarNet, VarNet3D, VarNet4D
-from fastmri.losses import ssim3D_loss, combined_loss
+from fastmri.losses import CombinedLoss, SSIM3DLossOffset, ssim3D_loss
 
 from .mri_module import MriModule
 from fastmri.data.cest_test_data import generate_test_sample
@@ -47,7 +47,9 @@ class VarNetModule(MriModule):
         lr_gamma: float = 0.1,
         weight_decay: float = 0.0,
         volume_training=False,
-        mask_center = True,
+        mask_center=True,
+        accelerations=[],
+        loss="combined",
         **kwargs,
     ):
         """
@@ -106,9 +108,12 @@ class VarNetModule(MriModule):
                 pools=self.pools,
             )
 
-        if volume_training:
-            print("Using combined loss")
-            self.loss = combined_loss  # torch.nn.MSELoss()
+        if loss == "combined":
+            self.loss = CombinedLoss()
+        elif loss == "l1":
+            self.loss = torch.nn.L1Loss()
+        elif loss == "ssim":
+            self.loss = ssim3D_loss
         else:
             self.loss = fastmri.SSIMLoss()
 
@@ -189,7 +194,7 @@ class VarNetModule(MriModule):
             volume = volume.cpu().numpy()
             metrics["mse"] = metrics["mse"] + normalized_root_mse(t, volume)
             metrics["psnr"] = metrics["psnr"] + peak_signal_noise_ratio(t, volume, data_range=(t.max() - t.min()))
-            metrics["ssim"] = metrics["ssim"] + structural_similarity(t, volume)
+            metrics["ssim"] = metrics["ssim"] + structural_similarity(t, volume, win_size=3)
         metrics["mse"] = metrics["mse"] / kspace.shape[2]
         metrics["psnr"] = metrics["psnr"] / kspace.shape[2]
         metrics["ssim"] = metrics["ssim"] / kspace.shape[2]
