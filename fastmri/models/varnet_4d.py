@@ -12,6 +12,7 @@ import fastmri
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.checkpoint import checkpoint, checkpoint_sequential
 from fastmri.data import transforms
 
 from fastmri.models.unet_4d import Unet4D
@@ -121,7 +122,8 @@ class NormUnet(nn.Module):
         x, mean, std = self.norm(x)
         x, pad_sizes = self.pad(x)
         x_pre = x
-        x = self.unet(x_pre)
+        # x = self.unet(x_pre)
+        x = checkpoint(self.unet, x_pre)
         # get shapes back and unnormalize
         x = self.unpad(x, *pad_sizes)
         x = self.unnorm(x, mean, std)
