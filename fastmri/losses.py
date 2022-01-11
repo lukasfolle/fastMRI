@@ -225,5 +225,5 @@ def ssim3D_loss(img1, img2, window_size=3, size_average=True):
 
 def combined_loss(img1, img2):
     ssim_loss = ssim3D_loss(img1, img2)
-    mse_loss = F.mse_loss(img1, img2)
-    return (ssim_loss + mse_loss) / 2
+    mse_loss = F.l1_loss(img1, img2)
+    return 0.9 * ssim_loss + 0.1 * mse_loss
