@@ -22,6 +22,8 @@ def test(save_path=r"C:\Users\follels\Documents\fastMRI\logs\varnet\outputs"):
 
     kspace, mask, num_low_frequencies = generate_test_sample()
 
+    # TODO: As soon as kspace is HR segmented kspace, add undersampling here
+
     reco = fastmri.ifft3c_new_offsets(kspace)
     reco = fastmri.complex_abs(reco)
     reco = fastmri.rss(reco, dim=1).squeeze()

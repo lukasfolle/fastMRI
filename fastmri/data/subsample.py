@@ -503,12 +503,15 @@ class VariableDensitiyMask3D(MaskFunc3D):
     def draw_samples(self, shape, acceleration):
         tol = 0.1
         while True:
-            s = self.rng_new.multivariate_normal([shape[1] // 2, shape[2] // 2], [[1.5, 0], [0, 200]], self.num_samples)
+            s = self.rng_new.multivariate_normal([shape[1] // 2, shape[2] // 2], [[2.5, 0], [0, 500]], self.num_samples)
             s[:, 0] = np.clip(s[:, 0], 0, shape[1] - 1)
             s[:, 1] = np.clip(s[:, 1], 0, shape[2] - 1)
             s = s.astype(int)
             mask = np.zeros(shape[1:-1], dtype=bool)
             mask[s[:, 0], s[:, 1]] = True
+            # Dense center sampling
+            mask[int(mask.shape[0] * 2 / 8):int(mask.shape[0] * 6 / 8),
+                 int(mask.shape[1] * 9 / 20):int(mask.shape[1] * 11 / 20)] = True
             R = 1 / (np.sum(mask) / (mask.shape[0] * mask.shape[1]))
             if R > acceleration:
                 self.num_samples += 50
