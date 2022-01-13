@@ -6,9 +6,9 @@ from skimage.transform import resize
 # Uniform sampling in a hyperspere
 # Based on Matlab implementation by Roger Stafford
 # Can be optimized for Bridson algorithm by excluding all points within the r/2 sphere
-def hypersphere_volume_sample(center, radius, k=1):
+def hypersphere_volume_sample(center, radius, k=1, rng_new=np.random.default_rng):
     ndim = center.size
-    x = np.random.normal(size=(k, ndim))
+    x = rng_new.normal(size=(k, ndim))
     ssq = np.sum(x ** 2, axis=1)
     fr = radius * gammainc(ndim / 2, ssq / 2) ** (1 / ndim) / np.sqrt(ssq)
     frtiled = np.tile(fr.reshape(k, 1), (1, ndim))
@@ -29,7 +29,7 @@ def squared_distance(p0, p1):
     return np.sum(np.square(p0 - p1))
 
 
-def Bridson_sampling(dims=np.array([1.0, 1.0]), radius=0.05, k=30, hypersphere_sample=hypersphere_volume_sample):
+def Bridson_sampling(dims=np.array([1.0, 1.0]), radius=0.05, k=30, hypersphere_sample=hypersphere_volume_sample, rng_new=None):
     # References: Fast Poisson Disk Sampling in Arbitrary Dimensions
     #             Robert Bridson, SIGGRAPH, 2007
 
@@ -87,7 +87,7 @@ def Bridson_sampling(dims=np.array([1.0, 1.0]), radius=0.05, k=30, hypersphere_s
         i = np.random.randint(len(points))
         p = points[i]
         del points[i]
-        Q = hypersphere_sample(np.array(p), radius * sample_factor, k)
+        Q = hypersphere_sample(np.array(p), radius * sample_factor, k, rng_new)
         for q in Q:
             if in_limits(q) and not in_neighborhood(q):
                 add_point(q)
@@ -108,17 +108,18 @@ def create_circular_mask(h, w, center=None, radius=None):
 
 
 class CircularPoissonMaskGenerator:
-    def __init__(self, shape: np.array, central_sampling: bool, accel: float, radius: float = 0.0125):
+    def __init__(self, shape: np.array, central_sampling: bool, accel: float, radius: float = 0.0125, rng_new=None):
         self.shape = shape
         self.central_sampling = central_sampling
         self.accel = accel
         self.radius = radius
         self.mask = np.zeros(tuple(self.shape))
+        self.rng_new = rng_new
 
     def __call__(self):
         while True:
             shape_bs = self.shape / max(self.shape)
-            bs = Bridson_sampling(shape_bs, radius=self.radius)
+            bs = Bridson_sampling(shape_bs, radius=self.radius, rng_new=self.rng_new)
             bs = (bs * max(self.shape)).astype(int)
             self.mask *= 0
             if self.central_sampling:

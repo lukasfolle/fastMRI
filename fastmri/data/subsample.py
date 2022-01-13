@@ -533,7 +533,7 @@ class PoissonDensitiyMask3D(MaskFunc3D):
     ) -> np.ndarray:
         self.rng_new = np.random.default_rng(seed)
         generator = CircularPoissonMaskGenerator(np.array(shape[1:-1]), accel=acceleration, central_sampling=True,
-                                                 radius=self.poisson_radius)
+                                                 radius=self.poisson_radius, rng_new=self.rng_new)
         mask = generator()
         self.poisson_radius = generator.radius
         return mask[None]
