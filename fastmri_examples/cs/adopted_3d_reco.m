@@ -15,7 +15,7 @@ if ~simulation
     kspace = kspace(...
                     round(size(kspace, 1)*1/4):round(size(kspace, 1)*3/4)-1,...
                     round(size(kspace, 2)*1/4):round(size(kspace, 2)*3/4)-1,...
-                    round(size(kspace, 3) / 2)-4:round(size(kspace, 3) / 2)+4-1, :);
+                    round(size(kspace, 3) / 2)-10:round(size(kspace, 3) / 2)+10-1, :);
     slice_sel = round(size(kspace, 3) / 2 + 1);
 else
     kspace = bart('phantom -3 -k -s 5');
@@ -39,36 +39,8 @@ imshow(squeeze(knee_rss(:, :, slice_sel)), [])
 accel = 6.0;
 num_samples = 3000;
 
-while true
-    us_mask = zeros(size(knee_rss, 3), size(knee_rss, 1));
-    mu = [round(size(knee_rss, 1) / 2) round(size(knee_rss, 3) / 2)];
-    Sigma = [size(knee_rss, 1) * 5 0;
-             0 size(knee_rss, 3) * 10];
-    X = int32(mvnrnd(mu, Sigma, num_samples));
-    % Dense central mask sampling
-    us_mask(round(size(us_mask, 1)*2/8):round(size(us_mask, 1)*6/8), round(size(us_mask, 2)*9/20):round(size(us_mask, 2)*11/20)) = 1;
-    for xi=1:length(X)
-        idx = X(xi,:);
-        if idx(1) < 1
-            continue
-        elseif idx(2) < 1
-           continue
-        elseif idx(1) > size(knee_rss, 1)
-            continue
-        elseif idx(2) > size(knee_rss, 3)
-            continue
-        end
-        us_mask(idx(2), idx(1)) = 1;
-    end
-    R = 1 / (sum(us_mask(:)) / numel(us_mask));
-    if abs(R - accel) < 0.1
-        break
-    elseif R > accel
-        num_samples = num_samples + 50;
-    elseif R < accel
-        num_samples = num_samples - 50;
-    end
-end
+figure;
+us_mask = poissonUSMask([size(knee_rss, 3), size(knee_rss, 1)], accel);
 us_mask = us_mask';
 
 figure;
@@ -113,7 +85,7 @@ title("Fully sampled images")
 %     3 receive channels
 %     4 ESPIRiT maps
 
-kspace_l1 = bart('pics -l1 -r 0.01', kspace, sens_maps);
+kspace_l1 = bart('pics -S -l1 -r 0.1', kspace, sens_maps);
 kspace_l1 = abs(kspace_l1);
 
 %% Results
