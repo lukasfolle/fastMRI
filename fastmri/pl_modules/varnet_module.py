@@ -12,7 +12,7 @@ import torch
 import torch.nn.functional as F
 from fastmri.data import transforms
 from fastmri.models import VarNet, VarNet3D, VarNet4D
-from fastmri.losses import CombinedLoss, SSIM3DLossOffset, ssim3D_loss
+from fastmri.losses import combined_loss, ssim3D_loss
 
 from .mri_module import MriModule
 from fastmri.data.cest_test_data import generate_test_sample
@@ -109,7 +109,7 @@ class VarNetModule(MriModule):
             )
 
         if loss == "combined":
-            self.loss = CombinedLoss()
+            self.loss = combined_loss
         elif loss == "l1":
             self.loss = torch.nn.L1Loss()
         elif loss == "ssim":

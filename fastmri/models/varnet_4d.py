@@ -269,12 +269,6 @@ class VarNet4D(nn.Module):
             [VarNetBlock(NormUnet(chans, pools)) for _ in range(num_cascades)]
         )
 
-        # self.final_layers = nn.Sequential(
-        #     ConvBlock(1, 4),
-        #     ConvBlock(4, 4),
-        #     Conv4d(4, 1, kernel_size=3, padding=1, bias=False)
-        # )
-
     def forward(
         self,
         masked_kspace: torch.Tensor,
@@ -340,10 +334,10 @@ class VarNetBlock(nn.Module):
 
 
 if __name__ == "__main__":
-    vn = VarNet4D(2, 1, 2, 2, 2).cuda()
+    vn = VarNet4D(4, 2, 4, 2, 3).cuda()
     # Batch Channel Offsets Depth Height Width
-    for _ in range(100):
-        ret = vn(torch.rand((1, 15, 4, 4, 320, 180, 2)).cuda(), torch.rand((1, 15, 4, 4, 320, 180, 2)).cuda() > 0.5)
+    for _ in range(3):
+        ret = vn(torch.rand((1, 15, 8, 8, 320, 180, 2)).cuda(), torch.rand((1, 15, 8, 8, 320, 180, 2)).cuda() > 0.5)
         if torch.isnan(ret).any():
             raise Exception()
         print(ret.max())

@@ -12,6 +12,7 @@ from typing import Optional, Sequence, Tuple, Union
 import numpy as np
 import torch
 from skimage.transform import resize
+from fastmri.data.poisson_disc import CircularPoissonMaskGenerator
 
 
 @contextlib.contextmanager
@@ -475,25 +476,6 @@ class EquispacedMaskFractionFunc3D(MaskFunc3D):
         return mask
 
 
-class PoissonMask3D(MaskFunc3D):
-    def __init__(self, accelerations, allow_any_combination=False, seed=None):
-        super().__init__([0], accelerations, allow_any_combination, seed)
-
-    def calculate_acceleration_mask_3D(
-        self,
-        num_cols: int,
-        acceleration: int,
-        offset: Optional[int],
-        num_low_frequencies: int,
-        shape,
-        seed,
-    ) -> np.ndarray:
-        if seed is not None:
-            seed = np.sum((offset, *seed))
-        poisson_mask = np.abs(poisson(shape[1:-1], accel=acceleration, seed=seed))[None]
-        return poisson_mask
-
-
 class VariableDensitiyMask3D(MaskFunc3D):
     def __init__(self, accelerations, allow_any_combination=False, seed=None):
         super().__init__([0], accelerations, allow_any_combination, seed)
@@ -531,6 +513,29 @@ class VariableDensitiyMask3D(MaskFunc3D):
     ) -> np.ndarray:
         self.rng_new = np.random.default_rng(seed)
         mask = self.draw_samples(shape, acceleration)
+        return mask[None]
+
+
+class PoissonDensitiyMask3D(MaskFunc3D):
+    def __init__(self, accelerations, allow_any_combination=False, seed=None):
+        super().__init__([0], accelerations, allow_any_combination, seed)
+        self.rng_new = np.random.default_rng(seed)
+        self.poisson_radius = 0.0125
+
+    def calculate_acceleration_mask_3D(
+        self,
+        num_cols: int,
+        acceleration: int,
+        offset: Optional[int],
+        num_low_frequencies: int,
+        shape,
+        seed,
+    ) -> np.ndarray:
+        self.rng_new = np.random.default_rng(seed)
+        generator = CircularPoissonMaskGenerator(np.array(shape[1:-1]), accel=acceleration, central_sampling=True,
+                                                 radius=self.poisson_radius)
+        mask = generator()
+        self.poisson_radius = generator.radius
         return mask[None]
 
 
@@ -696,7 +701,7 @@ def create_mask_for_mask_type(
     elif mask_type_str == "magic_fraction":
         return MagicMaskFractionFunc(center_fractions, accelerations)
     elif mask_type_str == "poisson_3d":
-        return PoissonMask3D(accelerations)
+        return PoissonDensitiyMask3D(accelerations)
     elif mask_type_str == "variabledensity3d":
         return VariableDensitiyMask3D(accelerations)
     else:

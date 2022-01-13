@@ -187,7 +187,7 @@ def complex_center_crop(data: torch.Tensor, shape: Tuple[int, int]) -> torch.Ten
 
 def complex_center_crop_3d(data: torch.Tensor, shape: Tuple[int, int, int]) -> torch.Tensor:
     if not (0 < shape[0] <= data.shape[-3] and 0 < shape[1] <= data.shape[-2]):
-        raise ValueError("Invalid shapes.")
+        raise ValueError(f"Invalid shapes. Got {shape} and {data.shape}")
 
     d_from = (data.shape[-3] - shape[0]) // 2
     w_from = (data.shape[-2] - shape[1]) // 2

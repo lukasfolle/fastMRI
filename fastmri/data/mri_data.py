@@ -635,8 +635,9 @@ class CESTDataset(VolumeDataset):
     def generate_offset(self, kspace, hf, metadata, fname, offset, grappa_weights=None):
         downsampling_factor = 2.5  # 3.48
         x_y_extend = 320 // downsampling_factor
-        z_extend = 8
+        z_extend = 16  # kspace.shape[-3]  # 8
         target, k_space_downsampled = self.reco(kspace, downsampling_factor, z_extend)
+        z_extend = target.shape[0]  # Shape might change due to rounding error
         mask = None
         if self.apply_grappa:
             mask = create_mask_for_mask_type("equispaced_fraction_3d", [0.08], [2]).calculate_acceleration_mask_3D(
@@ -743,7 +744,7 @@ if __name__ == "__main__":
     from utils.matplotlib_viewer import scroll_slices
     from tqdm import trange
 
-    mask = create_mask_for_mask_type("variabledensity3d", [0], [6])
+    mask = create_mask_for_mask_type("poisson_3d", [0], [6])
     transform = VarNetDataTransformVolume4D(mask_func=mask, use_seed=True)
     # cest_ds = CESTDataset("/home/woody/iwi5/iwi5044h/fastMRI/multicoil_train", "multicoil", transform, use_dataset_cache=False, cache_path="/home/woody/iwi5/iwi5044h/Code/fastMRI/cache_test")
     cest_ds = CESTDataset(r"E:\Lukas\multicoil_val", "multicoil", transform=transform, use_dataset_cache=False,

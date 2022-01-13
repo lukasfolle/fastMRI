@@ -27,7 +27,7 @@ def cli_main(args):
     # data
     # ------------
     # this creates a k-space mask for transforming input data
-    mask = create_mask_for_mask_type("variabledensity3d", args.center_fractions, args.accelerations)
+    mask = create_mask_for_mask_type("poisson_3d", args.center_fractions, args.accelerations)
     # use random masks for train transform, fixed masks for val transform
     train_transform = VarNetDataTransformVolume4D(mask_func=mask, use_seed=False)
     val_transform = VarNetDataTransformVolume4D(mask_func=mask)
@@ -93,7 +93,7 @@ def build_args():
     path_config = pathlib.Path(r"C:\Users\follels\Documents\fastMRI\fastmri_dirs.yaml")
     backend = None  # "ddp"  # "ddp"  # "ddp"
     num_gpus = 1 if backend == "ddp" else 1
-    batch_size = num_gpus
+    batch_size = 1
 
     # set defaults based on optional directory config
     data_path = fetch_dir("knee_path", path_config)
