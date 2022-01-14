@@ -119,7 +119,6 @@ class CircularPoissonMaskGenerator:
         self.rng_new = rng_new
 
     def __call__(self):
-        print("Generating poisson disc.")
         while True:
             shape_bs = self.shape / max(self.shape)
             bs = Bridson_sampling(shape_bs, radius=self.radius, rng_new=self.rng_new)
@@ -137,16 +136,10 @@ class CircularPoissonMaskGenerator:
             self.mask *= cm
             R = 1 / (np.sum(self.mask) / np.prod(self.mask.shape) + 1e-8)
             if abs(R - self.accel) < 0.1:
-                # print(self.radius)
-                print("Done generating poisson disc.")
                 return self.mask
             elif R > self.accel:
-                print(R)
-                print(self.radius)
                 self.radius -= 0.0001
             elif R < self.accel:
-                print(R)
-                print(self.radius)
                 self.radius += 0.0001
 
 
