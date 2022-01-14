@@ -82,9 +82,9 @@ def Bridson_sampling(dims=np.array([1.0, 1.0]), radius=0.05, k=30, hypersphere_s
     P.fill(np.nan)
 
     points = []
-    add_point(np.random.uniform(np.zeros(ndim), dims))
+    add_point(rng_new.uniform(np.zeros(ndim), dims))
     while len(points):
-        i = np.random.randint(len(points))
+        i = rng_new.integers(len(points))
         p = points[i]
         del points[i]
         Q = hypersphere_sample(np.array(p), radius * sample_factor, k, rng_new)
