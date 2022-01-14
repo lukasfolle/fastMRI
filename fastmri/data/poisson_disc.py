@@ -103,12 +103,14 @@ def create_circular_mask(h, w, center=None, radius=None):
     Y, X = np.ogrid[:h, :w]
     dist_from_center = np.sqrt((X - center[0]) ** 2 + (Y - center[1]) ** 2)
 
-    mask = dist_from_center <= radius
+    mask = (dist_from_center <= radius).astype(float)
     return mask
 
 
 class CircularPoissonMaskGenerator:
     def __init__(self, shape: np.array, central_sampling: bool, accel: float, radius: float = 0.0125, rng_new=None):
+        if rng_new is None:
+            rng_new = np.random.default_rng(42)
         self.shape = shape
         self.central_sampling = central_sampling
         self.accel = accel
@@ -117,6 +119,7 @@ class CircularPoissonMaskGenerator:
         self.rng_new = rng_new
 
     def __call__(self):
+        print("Generating poisson disc.")
         while True:
             shape_bs = self.shape / max(self.shape)
             bs = Bridson_sampling(shape_bs, radius=self.radius, rng_new=self.rng_new)
@@ -132,22 +135,25 @@ class CircularPoissonMaskGenerator:
             cm = create_circular_mask(100, 100)
             cm = resize(cm, tuple(self.shape))
             self.mask *= cm
-            R = 1 / (np.sum(self.mask) / np.prod(self.mask.shape))
+            R = 1 / (np.sum(self.mask) / np.prod(self.mask.shape) + 1e-8)
             if abs(R - self.accel) < 0.1:
                 # print(self.radius)
+                print("Done generating poisson disc.")
                 return self.mask
             elif R > self.accel:
-                # print(self.radius)
+                print(R)
+                print(self.radius)
                 self.radius -= 0.0001
             elif R < self.accel:
-                # print(self.radius)
+                print(R)
+                print(self.radius)
                 self.radius += 0.0001
 
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
 
-    gen = CircularPoissonMaskGenerator(np.array([32, 148]), True, 6)
+    gen = CircularPoissonMaskGenerator(np.array([32, 148]), True, 6, rng_new=np.random.default_rng())
     mask1 = gen()
     mask2 = gen()
     plt.subplot(1, 3, 1)
@@ -156,4 +162,4 @@ if __name__ == "__main__":
     plt.imshow(mask2)
     plt.subplot(1, 3, 3)
     plt.imshow(abs(mask1 - mask2))
-    plt.show()
+    plt.savefig("test.png")
