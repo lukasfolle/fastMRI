@@ -121,9 +121,12 @@ class VarNetModule(MriModule):
         return self.varnet(masked_kspace, mask, num_low_frequencies)
 
     def training_step(self, batch, batch_idx):
-        output = self(batch.masked_kspace, batch.mask, batch.num_low_frequencies)
+        if len(batch) == 1:
+            batch = batch[0]
 
-        target, output = transforms.center_crop_to_smallest(batch.target, output)
+        output = self(batch.masked_kspace.unsqueeze(0), batch.mask.unsqueeze(0), batch.num_low_frequencies)
+
+        target, output = transforms.center_crop_to_smallest(batch.target.unsqueeze(0), output)
         loss = self.loss(
             output.unsqueeze(1), target.unsqueeze(1),  # data_range=batch.max_value
         )
@@ -132,16 +135,19 @@ class VarNetModule(MriModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
+        if len(batch) == 1:
+            batch = batch[0]
+
         output = self.forward(
-            batch.masked_kspace, batch.mask, batch.num_low_frequencies
+            batch.masked_kspace.unsqueeze(0), batch.mask.unsqueeze(0), batch.num_low_frequencies
         )
-        target, output = transforms.center_crop_to_smallest(batch.target, output)
+        target, output = transforms.center_crop_to_smallest(batch.target.unsqueeze(0), output)
         loss = self.loss(
             output.unsqueeze(1), target.unsqueeze(1),  # data_range=batch.max_value
         )
         self.log("validation_loss", loss)
         if self.current_epoch % 10 == 0:
-            self.log_zero_filling_metrics(batch.masked_kspace, batch.target)
+            self.log_zero_filling_metrics(batch.masked_kspace.unsqueeze(0), batch.target.unsqueeze(0))
         return {
             "batch_idx": batch_idx,
             "fname": batch.fname,
@@ -155,6 +161,8 @@ class VarNetModule(MriModule):
         }
 
     def test_step(self, batch, batch_idx):
+        if len(batch) == 1:
+            batch = batch[0]
         output = self(batch.masked_kspace, batch.mask, batch.num_low_frequencies)
 
         # check for FLAIR 203

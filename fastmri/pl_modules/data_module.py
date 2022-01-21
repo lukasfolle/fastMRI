@@ -10,6 +10,7 @@ from pathlib import Path
 import os
 from typing import Callable, Optional, Union
 
+import monai
 import fastmri
 import pytorch_lightning as pl
 import torch
@@ -224,6 +225,9 @@ class FastMriDataModule(pl.LightningDataModule):
             else:
                 sampler = fastmri.data.VolumeSampler(dataset, shuffle=False)
 
+        def my_collate(batch):
+            return [elem for elem in batch]
+
         dataloader = torch.utils.data.DataLoader(
             dataset=dataset,
             batch_size=self.batch_size,
@@ -231,6 +235,7 @@ class FastMriDataModule(pl.LightningDataModule):
             worker_init_fn=worker_init_fn,
             sampler=sampler,
             shuffle=is_train if sampler is None else False,
+            collate_fn=my_collate
         )
 
         return dataloader

@@ -18,6 +18,7 @@ from fastmri.data.mri_data import fetch_dir
 from fastmri.data.subsample import create_mask_for_mask_type
 from fastmri.data.transforms import VarNetDataTransformVolume4D
 from fastmri.pl_modules import FastMriDataModule, VarNetModule
+from fastmri.pl_modules.DDP_gradient import DDPwGradientCheckpointing
 
 
 def cli_main(args):
@@ -27,7 +28,7 @@ def cli_main(args):
     # data
     # ------------
     # this creates a k-space mask for transforming input data
-    mask = create_mask_for_mask_type("poisson_3d", args.center_fractions, args.accelerations)
+    mask = create_mask_for_mask_type("variabledensity3d", args.center_fractions, args.accelerations)
     # use random masks for train transform, fixed masks for val transform
     train_transform = VarNetDataTransformVolume4D(mask_func=mask, use_seed=False)
     val_transform = VarNetDataTransformVolume4D(mask_func=mask)
@@ -90,9 +91,9 @@ def build_args():
     parser = ArgumentParser()
 
     # basic args
-    path_config = pathlib.Path(r"C:\Users\follels\Documents\fastMRI\fastmri_dirs.yaml")
-    backend = None  # "ddp"  # "ddp"  # "ddp"
-    num_gpus = 1 if backend == "ddp" else 1
+    path_config = pathlib.Path("/home/woody/iwi5/iwi5044h/Code/fastMRI/fastmri_dirs.yaml")
+    backend = "ddp"  # "ddp"  # "ddp"  # "ddp"
+    num_gpus = 8  #1 if backend == "ddp" else 1
     batch_size = 1
 
     # set defaults based on optional directory config
@@ -169,8 +170,9 @@ def build_args():
         deterministic=False,  # makes things slower, but deterministic
         default_root_dir=default_root_dir,  # directory for logs and checkpoints
         max_epochs=1000,  # max number of epochs
-        num_workers=4,
-        log_every_n_steps=10,
+        num_workers=16,
+        log_every_n_steps=150,
+        plugins=DDPwGradientCheckpointing()
         # precision=16,
     )
 
@@ -196,8 +198,8 @@ def build_args():
         ckpt_list = sorted(checkpoint_dir.glob("*.ckpt"), key=os.path.getmtime)
         if ckpt_list:
             args.resume_from_checkpoint = str(ckpt_list[-1])
-    print("Not resuming from checkpoint!")
-    args.resume_from_checkpoint = None
+    # print("Not resuming from checkpoint!")
+    # args.resume_from_checkpoint = None
 
     return args
 
@@ -220,3 +222,16 @@ if __name__ == "__main__":
 
     # TODO: Vergleichsmethode: cs eg espirit or enlive
     # TODO: Increase offsets -> maybe init k-space with valid values over offset dim for all offsets
+
+    # 201142: R=4
+    # 201162: R=8
+    # 201347 & 201401 & 201403 & 201404 & 201405 & 201408 & 201409 & 201410 & 201413   R=6, ssim loss
+    # 204056 & 204056 & 204075 & 204076 & 204077  R=6, combined loss (0.9 ssim, 0.1 l1), continue from 201413
+    # 205331, 205967: 8x8x128x128, combined loss (0.9 ssim, 0.1 l1), from scratch
+    # 206452: 8x8x128x128, combined loss (0.9 ssim, 0.1 l1), dense center sampling
+    # 206888, 206957, 206958, 206959, 206960: 8x8x128x128, poisson dense center sampling, 8x16x128x128, ssim loss
+    # 208179, 208182, 208183, 208184, 208185, 208186: poisson dense center sampling, 8x16x64x64, ssim loss (window_size=5)
+    # 20024: 8x16x128x128, variable density function, ssim
+    # 20026: 8x16x128x128, variable density function, combined
+    # 20027: 8x16x128x128, variable density function, l1
+    # 20142 : 8x16x128x128, variable density function, combined
