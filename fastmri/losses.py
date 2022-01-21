@@ -202,7 +202,7 @@ def ssim(img1, img2, window_size=11, size_average=True):
     return _ssim(img1, img2, window, window_size, channel, size_average)
 
 
-def ssim3D_loss(img1, img2, window_size=3, size_average=True):
+def ssim3D_loss(img1, img2, window_size=5, size_average=True):
     channel = img1.shape[1]
     window = create_window_3D(window_size, channel)
 

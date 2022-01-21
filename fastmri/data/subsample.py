@@ -485,7 +485,7 @@ class VariableDensitiyMask3D(MaskFunc3D):
     def draw_samples(self, shape, acceleration):
         tol = 0.1
         while True:
-            s = self.rng_new.multivariate_normal([shape[1] // 2, shape[2] // 2], [[2.5, 0], [0, 500]], self.num_samples)
+            s = self.rng_new.multivariate_normal([shape[1] // 2, shape[2] // 2], [[5, 0], [0, 500]], self.num_samples)
             s[:, 0] = np.clip(s[:, 0], 0, shape[1] - 1)
             s[:, 1] = np.clip(s[:, 1], 0, shape[2] - 1)
             s = s.astype(int)

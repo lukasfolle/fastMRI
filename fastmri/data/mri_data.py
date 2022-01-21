@@ -633,7 +633,7 @@ class CESTDataset(VolumeDataset):
         return kspace, target
 
     def generate_offset(self, kspace, hf, metadata, fname, offset, grappa_weights=None):
-        downsampling_factor = 2.5  # 3.48
+        downsampling_factor = 2.5  # 2.5
         x_y_extend = 320 // downsampling_factor
         z_extend = 16  # kspace.shape[-3]  # 8
         target, k_space_downsampled = self.reco(kspace, downsampling_factor, z_extend)
@@ -746,33 +746,33 @@ if __name__ == "__main__":
 
     mask = create_mask_for_mask_type("poisson_3d", [0], [6])
     transform = VarNetDataTransformVolume4D(mask_func=mask, use_seed=True)
-    # cest_ds = CESTDataset("/home/woody/iwi5/iwi5044h/fastMRI/multicoil_train", "multicoil", transform, use_dataset_cache=False, cache_path="/home/woody/iwi5/iwi5044h/Code/fastMRI/cache_test")
-    cest_ds = CESTDataset(r"E:\Lukas\multicoil_val", "multicoil", transform=transform, use_dataset_cache=False,
-                          cache_path=r"C:\Users\follels\Documents\fastMRI\cache\cache_val")
+    cest_ds = CESTDataset("/home/woody/iwi5/iwi5044h/fastMRI/multicoil_train", "multicoil", transform, use_dataset_cache=False, cache_path="/home/woody/iwi5/iwi5044h/fastMRI/cache/cache_train")
+    # cest_ds = CESTDataset(r"E:\Lukas\multicoil_val", "multicoil", transform=transform, use_dataset_cache=False,
+    #                       cache_path=r"C:\Users\follels\Documents\fastMRI\cache\cache_val")
 
     for i in trange(len(cest_ds)):
         item = cest_ds.__getitem__(i)
         print(f"\n\nItem {i}")
         # for offset in range(item.target.shape[0]):
-        offset = 0
-        mask = item.mask.numpy().squeeze()
-        vol = item.target[offset].numpy().squeeze()
-        mask = mask[offset, ..., 0]
-        plt.imshow(mask)
-        plt.title(f"Sample {i}, offset {offset}")
-        plt.show()
-        vol = (vol - vol.min()) / (vol.max() - vol.min())
-        vol = np.moveaxis(vol, 0, -1)
-        scroll_slices(vol, title=f"Sample {i} Offset {offset}")
+        # offset = 0
+        # mask = item.mask.numpy().squeeze()
+        # vol = item.target[offset].numpy().squeeze()
+        # mask = mask[offset, ..., 0]
+        # plt.imshow(mask)
+        # plt.title(f"Sample {i}, offset {offset}")
+        # plt.show()
+        # vol = (vol - vol.min()) / (vol.max() - vol.min())
+        # vol = np.moveaxis(vol, 0, -1)
+        # scroll_slices(vol, title=f"Sample {i} Offset {offset}")
 
-        k_space_downsampled = item.masked_kspace[:, offset]
-        k_space_downsampled = torch.view_as_real(k_space_downsampled[..., 0] + 1j * k_space_downsampled[..., 1])
-        volume = fastmri.ifft3c(k_space_downsampled)
-        volume = fastmri.complex_abs(volume)
-        volume = fastmri.rss(volume, dim=0)
-        volume = (volume - volume.min()) / (volume.max() - volume.min())
-        volume = np.moveaxis(volume.numpy(), 0, -1)
-        scroll_slices(volume, title=f"Sample {i} Offset {offset}")
+        # k_space_downsampled = item.masked_kspace[:, offset]
+        # k_space_downsampled = torch.view_as_real(k_space_downsampled[..., 0] + 1j * k_space_downsampled[..., 1])
+        # volume = fastmri.ifft3c(k_space_downsampled)
+        # volume = fastmri.complex_abs(volume)
+        # volume = fastmri.rss(volume, dim=0)
+        # volume = (volume - volume.min()) / (volume.max() - volume.min())
+        # volume = np.moveaxis(volume.numpy(), 0, -1)
+        # scroll_slices(volume, title=f"Sample {i} Offset {offset}")
 
     # from fastmri.models.varnet_4d import VarNet4D
     # varnet = VarNet4D(4, 2, 4, 3, 2).to("cuda")
