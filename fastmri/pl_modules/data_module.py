@@ -10,10 +10,12 @@ from pathlib import Path
 import os
 from typing import Callable, Optional, Union
 
+import monai.data.utils
+
 import fastmri
 import pytorch_lightning as pl
 import torch
-from fastmri.data import CombinedSliceDataset, SliceDataset, VolumeDataset, CESTDataset
+from fastmri.data import CombinedSliceDataset, SliceDataset, VolumeDataset, CESTDataset, RealCESTData
 
 
 def worker_init_fn(worker_id):
@@ -62,6 +64,10 @@ def worker_init_fn(worker_id):
         else:
             seed = base_seed
         data.transform.mask_func.rng.seed(seed % (2 ** 32 - 1))
+
+
+def my_collate(batch):
+    return [elem for elem in batch]
 
 
 class FastMriDataModule(pl.LightningDataModule):
@@ -197,7 +203,7 @@ class FastMriDataModule(pl.LightningDataModule):
                     path = os.path.join(self.cache_dir, "cache_train")
                 else:
                     path = os.path.join(self.cache_dir, "cache_val")
-                dataset = CESTDataset(
+                dataset = RealCESTData(
                     root=data_path,
                     transform=data_transform,
                     sample_rate=sample_rate,
@@ -231,6 +237,7 @@ class FastMriDataModule(pl.LightningDataModule):
             worker_init_fn=worker_init_fn,
             sampler=sampler,
             shuffle=is_train if sampler is None else False,
+            collate_fn=my_collate
         )
 
         return dataloader

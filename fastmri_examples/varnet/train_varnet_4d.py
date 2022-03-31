@@ -124,7 +124,7 @@ def build_args():
 
     parser.add_argument(
         "--loss",
-        default="combined",
+        default="combined_loss_offsets",
         type=str,
         help="Loss function to use",
     )
@@ -148,11 +148,11 @@ def build_args():
     # module config
     parser = VarNetModule.add_model_specific_args(parser)
     parser.set_defaults(
-        num_cascades=4,  # number of unrolled iterations
-        pools=2,  # number of pooling layers for U-Net
-        chans=4,  # number of top-level channels for U-Net
+        num_cascades=6,  # number of unrolled iterations
+        pools=3,  # number of pooling layers for U-Net
+        chans=8,  # number of top-level channels for U-Net
         sens_pools=3,  # number of pooling layers for sense est. U-Net
-        sens_chans=2,  # number of top-level channels for sense est. U-Net
+        sens_chans=8,  # number of top-level channels for sense est. U-Net
         lr=0.001,  # Adam learning rate
         lr_step_size=100000,  # epoch at which to decrease learning rate
         lr_gamma=0.1,  # extent to which to decrease learning rate
@@ -169,9 +169,9 @@ def build_args():
         deterministic=False,  # makes things slower, but deterministic
         default_root_dir=default_root_dir,  # directory for logs and checkpoints
         max_epochs=1000,  # max number of epochs
-        num_workers=4,
-        log_every_n_steps=10,
-        # precision=16,
+        num_workers=0,
+        log_every_n_steps=1,
+        precision=16,
     )
 
     args = parser.parse_args()
@@ -196,8 +196,8 @@ def build_args():
         ckpt_list = sorted(checkpoint_dir.glob("*.ckpt"), key=os.path.getmtime)
         if ckpt_list:
             args.resume_from_checkpoint = str(ckpt_list[-1])
-    print("Not resuming from checkpoint!")
-    args.resume_from_checkpoint = None
+    # print("Not resuming from checkpoint!")
+    # args.resume_from_checkpoint = None
 
     return args
 
@@ -213,10 +213,5 @@ def run_cli():
 
 if __name__ == "__main__":
     run_cli()
-    # version 6/7: 4 2 4 3 2 -> 316k
-    # version 8:   5 3 4 3 2 -> 1.4M & no mask center for sens est. unet
-    # version 9:   4 2 4 3 2 -> 320k & no mask center for sens est. unet + some conv layers at end
-    # version 10/11:  4 2 4 3 2, changed us pattern to gaussian, R~=4
 
-    # TODO: Vergleichsmethode: cs eg espirit or enlive
-    # TODO: Increase offsets -> maybe init k-space with valid values over offset dim for all offsets
+# TODO: Try out pretrained network as init

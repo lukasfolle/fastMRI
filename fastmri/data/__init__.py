@@ -5,5 +5,5 @@ This source code is licensed under the MIT license found in the
 LICENSE file in the root directory of this source tree.
 """
 
-from .mri_data import SliceDataset, CombinedSliceDataset, VolumeDataset, CESTDataset
+from .mri_data import SliceDataset, CombinedSliceDataset, VolumeDataset, CESTDataset, RealCESTData
 from .volume_sampler import VolumeSampler

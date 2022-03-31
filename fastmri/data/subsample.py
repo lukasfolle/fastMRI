@@ -12,7 +12,7 @@ from typing import Optional, Sequence, Tuple, Union
 import numpy as np
 import torch
 from skimage.transform import resize
-from fastmri.data.poisson_disc import CircularPoissonMaskGenerator
+from fastmri.data.poisson_disc_variable_density import PoissonSampler
 
 
 @contextlib.contextmanager
@@ -485,14 +485,14 @@ class VariableDensitiyMask3D(MaskFunc3D):
     def draw_samples(self, shape, acceleration):
         tol = 0.1
         while True:
-            s = self.rng_new.multivariate_normal([shape[1] // 2, shape[2] // 2], [[2.5, 0], [0, 500]], self.num_samples)
+            s = self.rng_new.multivariate_normal([shape[1] // 2, shape[2] // 2], [[15, 0], [0, 500]], self.num_samples)
             s[:, 0] = np.clip(s[:, 0], 0, shape[1] - 1)
             s[:, 1] = np.clip(s[:, 1], 0, shape[2] - 1)
             s = s.astype(int)
             mask = np.zeros(shape[1:-1], dtype=bool)
             mask[s[:, 0], s[:, 1]] = True
             # Dense center sampling
-            mask[int(mask.shape[0] * 2 / 8):int(mask.shape[0] * 6 / 8),
+            mask[int(mask.shape[0] * 3 / 8):int(mask.shape[0] * 5 / 8),
                  int(mask.shape[1] * 9 / 20):int(mask.shape[1] * 11 / 20)] = True
             R = 1 / (np.sum(mask) / (mask.shape[0] * mask.shape[1]))
             if R > acceleration:
@@ -521,6 +521,7 @@ class PoissonDensitiyMask3D(MaskFunc3D):
         super().__init__([0], accelerations, allow_any_combination, seed)
         self.rng_new = np.random.default_rng(seed)
         self.poisson_radius = 0.0125
+        self.rng_new = np.random.default_rng(seed)
 
     def calculate_acceleration_mask_3D(
         self,
@@ -531,12 +532,23 @@ class PoissonDensitiyMask3D(MaskFunc3D):
         shape,
         seed,
     ) -> np.ndarray:
+        # Round to closest even number
         self.rng_new = np.random.default_rng(seed)
-        generator = CircularPoissonMaskGenerator(np.array(shape[1:-1]), accel=acceleration, central_sampling=True,
-                                                 radius=self.poisson_radius, rng_new=self.rng_new)
-        mask = generator()
-        self.poisson_radius = generator.radius
-        return mask[None]
+        inner_shape = ((shape[1] // 2) & ~1, (shape[2] // 2) & ~1)
+        accu_inner = np.zeros((inner_shape[0], inner_shape[1]), dtype=np.int32)
+        PS = PoissonSampler(inner_shape[0], inner_shape[1], 4, 2, 42, 0, 0.7)
+        mask_inner = PS.generate(self.rng_new, accu_inner)
+
+        outer_shape = (shape[1] & ~1, shape[2] & ~1)
+        accu_outer = np.zeros((outer_shape[0], outer_shape[1]), dtype=np.int32)
+        PS = PoissonSampler(outer_shape[0], outer_shape[1], 9, 2, 42, 0, 0.7)
+        mask_combined = PS.generate(self.rng_new, accu_outer)
+        mask_combined[mask_combined.shape[0] // 2 - inner_shape[0] // 2:mask_combined.shape[0] // 2 + inner_shape[0] // 2,
+                      mask_combined.shape[1] // 2 - inner_shape[1] // 2:mask_combined.shape[1] // 2 + inner_shape[1] // 2] = mask_inner
+        # For uneven shapes
+        final_mask = np.zeros(shape[1:-1])
+        final_mask[0:mask_combined.shape[0], 0:mask_combined.shape[1]] = mask_combined
+        return final_mask[None]
 
 
 class MagicMaskFunc(MaskFunc):
@@ -706,3 +718,12 @@ def create_mask_for_mask_type(
         return VariableDensitiyMask3D(accelerations)
     else:
         raise ValueError(f"{mask_type_str} not supported")
+
+
+if __name__ == "__main__":
+    import matplotlib.pyplot as plt
+    vdm = PoissonDensitiyMask3D([6])
+    mask = vdm([1, 15, 91, 1])
+    plt.imshow(mask[0].squeeze())
+    plt.show()
+

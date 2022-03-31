@@ -202,7 +202,7 @@ def ssim(img1, img2, window_size=11, size_average=True):
     return _ssim(img1, img2, window, window_size, channel, size_average)
 
 
-def ssim3D_loss(img1, img2, window_size=3, size_average=True):
+def ssim3D_loss(img1, img2, window_size=5, size_average=True):
     channel = img1.shape[1]
     window = create_window_3D(window_size, channel)
 
@@ -221,10 +221,16 @@ def ssim3D_loss(img1, img2, window_size=3, size_average=True):
         img1 = (img1 - img1.min()) / (img1.max() - img1.min())
         img2 = (img2 - img2.min()) / (img2.max() - img2.min())
 
-        return _ssim_3D(img1, img2, window, window_size, channel, size_average).numpy()
+        return 1 - _ssim_3D(img1, img2, window, window_size, channel, size_average)
 
 
 def combined_loss(img1, img2):
     ssim_loss = ssim3D_loss(img1, img2)
     mse_loss = F.l1_loss(img1, img2)
     return 0.9 * ssim_loss + 0.1 * mse_loss
+
+
+def combined_loss_offsets(img1, img2):
+    mse_loss = F.l1_loss(img1, img2)
+    # ssim_loss = sum([ssim3D_loss(img1[:, offset].unsqueeze(0), img2[:, offset].unsqueeze(0)) for offset in range(img1.shape[1])]) / img1.shape[1]
+    return mse_loss  # 0.9 * ssim_loss + 0.1 *

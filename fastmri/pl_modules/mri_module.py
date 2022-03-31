@@ -98,12 +98,13 @@ class MriModule(pl.LightningModule):
 
 
         target = val_logs["target"].cpu().numpy()
-        target = (target - target.min()) / (target.max() - target.min() + 1e-6)
+        target = (target - target.min()) / (target.max() - target.min() + 1e-6).squeeze()
         prediction = val_logs["output"].cpu().numpy()
         prediction = (prediction - prediction.min()) / (prediction.max() - prediction.min() + 1e-6)
+        prediction = prediction.squeeze()
         self.log("val_metrics/psnr", peak_signal_noise_ratio(target, prediction))
         self.log("val_metrics/nrmse", normalized_root_mse(target, prediction))
-        self.log("val_metrics/ssim", structural_similarity(target.squeeze(), prediction.squeeze(), win_size=3))
+        self.log("val_metrics/ssim", structural_similarity(target, prediction, win_size=3))
 
         if val_logs["output"].ndim == 2:
             val_logs["output"] = val_logs["output"].unsqueeze(0)
@@ -130,7 +131,7 @@ class MriModule(pl.LightningModule):
                 error = (error - error.min()) / (error.max() - error.min() + 1e-10)
                 default_reco = reco(val_logs["masked_kspace"][i], val_logs["target"][i])
                 default_reco = (default_reco - default_reco.min()) / (default_reco.max() - default_reco.min() + 1e-10)
-                self.log_image(f"{key}/target", target[:, 0, target.shape[2] // 2, ...])
+                self.log_image(f"{key}/target", target[:, target.shape[1] // 2, ...])
                 self.log_image(f"{key}/reconstruction", output[:, 0, output.shape[2] // 2, ...])
                 self.log_image(f"{key}/error", error[:, 0, error.shape[2] // 2, ...])
                 self.log_image(f"{key}/default_reco", default_reco[default_reco.shape[0] // 2][None])

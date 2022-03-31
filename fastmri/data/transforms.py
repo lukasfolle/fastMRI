@@ -10,6 +10,7 @@ from typing import Dict, NamedTuple, Optional, Sequence, Tuple, Union
 import fastmri
 import numpy as np
 import torch
+from copy import deepcopy
 
 from .subsample import MaskFunc
 
@@ -433,6 +434,7 @@ class VarNetSample(NamedTuple):
     slice_num: int
     max_value: float
     crop_size: Tuple[int, int]
+    masked_kspace_no_imputation: Optional[torch.Tensor]
 
 
 class VarNetDataTransform:
@@ -652,6 +654,13 @@ class VarNetDataTransformVolume4D(VarNetDataTransform):
 
         return masked_data, masks, num_low_frequencies
 
+    def impute_missing_kspace_over_offsets(self, kspace):
+        filled_kspace = deepcopy(kspace)
+        for offset in range(kspace.shape[1]):
+            filled_kspace[:, offset] = torch.where(filled_kspace[:, offset] == 0, torch.mean(kspace, 1),
+                                                   filled_kspace[:, offset])
+        return filled_kspace
+
     def __call__(
         self,
         kspace: np.ndarray,
@@ -680,6 +689,8 @@ class VarNetDataTransformVolume4D(VarNetDataTransform):
             masked_kspace, mask_torch, num_low_frequencies = self.apply_mask(
                 kspace_torch, self.mask_func, seed=seed, padding=(acq_start, acq_end)
             )
+            masked_kspace_no_imputation = deepcopy(masked_kspace)
+            masked_kspace = self.impute_missing_kspace_over_offsets(masked_kspace)
 
             sample = VarNetSample(
                 masked_kspace=masked_kspace,
@@ -690,6 +701,7 @@ class VarNetDataTransformVolume4D(VarNetDataTransform):
                 slice_num=slice_num,
                 max_value=max_value,
                 crop_size=crop_size,
+                masked_kspace_no_imputation=masked_kspace_no_imputation
             )
         else:
             masked_kspace = kspace_torch

@@ -12,7 +12,7 @@ import torch
 import torch.nn.functional as F
 from fastmri.data import transforms
 from fastmri.models import VarNet, VarNet3D, VarNet4D
-from fastmri.losses import combined_loss, ssim3D_loss
+from fastmri.losses import combined_loss, ssim3D_loss, combined_loss_offsets
 
 from .mri_module import MriModule
 from fastmri.data.cest_test_data import generate_test_sample
@@ -49,7 +49,7 @@ class VarNetModule(MriModule):
         volume_training=False,
         mask_center=True,
         accelerations=[],
-        loss="combined",
+        loss="combined_loss_offsets",
         **kwargs,
     ):
         """
@@ -110,6 +110,8 @@ class VarNetModule(MriModule):
 
         if loss == "combined":
             self.loss = combined_loss
+        elif loss == "combined_loss_offsets":
+            self.loss = combined_loss_offsets
         elif loss == "l1":
             self.loss = torch.nn.L1Loss()
         elif loss == "ssim":
@@ -121,27 +123,29 @@ class VarNetModule(MriModule):
         return self.varnet(masked_kspace, mask, num_low_frequencies)
 
     def training_step(self, batch, batch_idx):
-        output = self(batch.masked_kspace, batch.mask, batch.num_low_frequencies)
+        batch = batch[0]
+        output = self(batch.masked_kspace[None], batch.mask[None], batch.num_low_frequencies)
 
         target, output = transforms.center_crop_to_smallest(batch.target, output)
         loss = self.loss(
-            output.unsqueeze(1), target.unsqueeze(1),  # data_range=batch.max_value
+            output, target.unsqueeze(0),  # data_range=batch.max_value
         )
         self.log("train_loss", loss)
 
         return loss
 
     def validation_step(self, batch, batch_idx):
+        batch = batch[0]
         output = self.forward(
-            batch.masked_kspace, batch.mask, batch.num_low_frequencies
+            batch.masked_kspace[None], batch.mask[None], batch.num_low_frequencies
         )
         target, output = transforms.center_crop_to_smallest(batch.target, output)
         loss = self.loss(
-            output.unsqueeze(1), target.unsqueeze(1),  # data_range=batch.max_value
+            output, target.unsqueeze(0),  # data_range=batch.max_value
         )
         self.log("validation_loss", loss)
         if self.current_epoch % 10 == 0:
-            self.log_zero_filling_metrics(batch.masked_kspace, batch.target)
+            self.log_zero_filling_metrics(batch.masked_kspace_no_imputation[None], batch.target[None])
         return {
             "batch_idx": batch_idx,
             "fname": batch.fname,
@@ -150,7 +154,7 @@ class VarNetModule(MriModule):
             "output": output,
             "mask": batch.mask,
             "target": target,
-            "masked_kspace": batch.masked_kspace,
+            "masked_kspace": batch.masked_kspace[None],
             "val_loss": loss
         }
 

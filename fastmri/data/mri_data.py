@@ -9,14 +9,19 @@ import logging
 import os
 import pickle
 import random
+import shutil
 import xml.etree.ElementTree as etree
 from copy import deepcopy
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
 from warnings import warn
 import pathlib
+import shutil
+from scipy.io import loadmat
 
 import h5py
+import tempfile
+
 import numpy as np
 import torch
 import yaml
@@ -553,49 +558,47 @@ class VolumeDataset(torch.utils.data.Dataset):
         return sample
 
 
-class RealCESTData(torch.utils.data.Dataset):
-    def __init__(self):
-        path_config = pathlib.Path(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-                                                "fastmri_dirs.yaml"))
-        self.base_path = fetch_dir("cest_path", path_config)
+class RealCESTData(VolumeDataset):
+    def __init__(self,
+                 root: Union[str, Path, os.PathLike],
+                 challenge: str,
+                 transform: Optional[Callable] = None,
+                 use_dataset_cache: bool = False,
+                 sample_rate: Optional[float] = None,
+                 volume_sample_rate: Optional[float] = None,
+                 dataset_cache_file: Union[str, Path,
+                                           os.PathLike] = "/opt/tmp/dataset_cache.pkl",
+                 num_cols: Optional[Tuple[int]] = None,
+                 cache_path=None,
+                 num_offsets: int = 8):
+        super().__init__(root, challenge, transform, use_dataset_cache, sample_rate,
+                         volume_sample_rate, dataset_cache_file, num_cols, cache_path)
         self.cases = []
+        self.load_data()
 
     def load_data(self):
-        for file in os.listdir(self.base_path):
-            if "cest_knee_raw_real.mat" in file:
-                file_path = os.path.join(self.base_path, file)
-                if not file_path.endswith("mat"):
-                    raise NotImplementedError("Can only process .mat files.")
-                f = h5py.File(file_path, 'r')
-                data = f.get('r')
-                data = np.array(data)
-                data = np.moveaxis(data, np.arange(len(data.shape)),
-                                   [1, -1, 2, 4, 0, 3])  # maybe switch 3 and 4 ie phase and freq?
-                # print(f"Out of {data.shape[-1]} repetitions, selecting the first one.")
-                real = data[..., 0]
-                f = h5py.File(file_path.replace("real", "imag"), 'r')
-                data = f.get('im')
-                data = np.array(data)
-                data = np.moveaxis(data, np.arange(len(data.shape)),
-                                   [1, -1, 2, 4, 0, 3])  # maybe switch 3 and 4 ie phase and freq?
-                im = data[..., 0]
-                f = h5py.File(file_path.replace("real", "real_ref"), 'r')
-                real_ref = f.get('ref_scan_real')
-                real_ref = np.array(real_ref)
-                real_ref = np.moveaxis(real_ref, np.arange(len(real_ref.shape)),
-                                       [1, 3, 0, 2])  # maybe switch 2 and 3 ie phase and freq?
-                f = h5py.File(file_path.replace("real", "imag_ref"), 'r')
-                real_im = f.get('ref_scan_im')
-                real_im = np.array(real_im)
-                real_im = np.moveaxis(real_im, np.arange(len(real_im.shape)),
-                                      [1, 3, 0, 2])  # maybe switch 2 and 3 ie phase and freq?
-                complex_case = np.stack((real, im), -1)
-                complex_case_ref = np.stack((real_ref, real_im), -1)
-                mask = np.abs(real + 1j * im).sum((0, 1, 4), keepdims=True) > 0.0
-                mask = np.repeat(np.repeat(mask, im.shape[1], axis=1)[..., None], 2, axis=-1)
+        kspace = np.stack([loadmat(r"U:\testCEST_CS\real.mat")["re"], loadmat(r"U:\testCEST_CS\imag.mat")["im"]], -1)
+        kspace = kspace.transpose((1, 3, 0, 2, 4, 5))
+        kspace = kspace[..., 0] + 1j * kspace[..., 1]
 
-                # k-space target shape: (coils, offsets, slices, x, y)
-                self.cases.append((complex_case, complex_case_ref, mask))
+        kspace = kspace * 1e3
+
+        targets = []
+        kspace_torch = np.stack((np.real(kspace), np.imag(kspace)), -1)
+        kspace_torch = torch.from_numpy(kspace_torch)
+        for offset in range(kspace_torch.shape[-2]):
+            target = fastmri.ifft3c(kspace_torch[..., offset, :])
+            target = fastmri.complex_abs(target)
+            target = fastmri.rss(target, dim=0).squeeze()
+            targets.append(target)
+        targets = torch.stack(targets, -1)
+        # c o d h w
+        kspace = torch.from_numpy(kspace_torch.numpy().transpose((0, 4, 1, 2, 3, 5)))
+        kspace = kspace[:, :8]  # Keep only first 8 offsets
+        targets = torch.from_numpy(targets.numpy().transpose((3, 0, 1, 2)))
+        targets = targets[:8]  # Keep only first 8 offsets
+        sample = (kspace, None, targets, {"max": 0, "padding_left": 0, "padding_right": 0, "recon_size": [0, 0]}, "test")
+        self.cases = [sample]
 
     def __len__(self):
         return len(self.cases)
@@ -603,8 +606,12 @@ class RealCESTData(torch.utils.data.Dataset):
     def __getitem__(self, i):
         if len(self.cases) == 0:
             self.load_data()
-        kspace, ref, mask = self.cases[i]
-        return torch.from_numpy(kspace), torch.from_numpy(ref), torch.from_numpy(mask)
+        sample = self.cases[i]
+        if self.transform is None:
+            return sample
+        sample = self.transform(sample[0], sample[1],
+                                sample[2], sample[3], sample[4], -1)
+        return sample
 
 
 class CESTDataset(VolumeDataset):
@@ -715,8 +722,15 @@ class CESTDataset(VolumeDataset):
                 samples = pickle.load(handle)
         else:
             samples = self.generate_sample(i)
-            with open(file_location, 'wb') as handle:
-                pickle.dump(samples, handle, protocol=pickle.HIGHEST_PROTOCOL)
+            with tempfile.TemporaryDirectory() as tempdir:
+                temp_location = os.path.join(tempdir, f"{i}.pkl")
+                with open(temp_location, 'wb') as handle:
+                    pickle.dump(samples, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                if Path(temp_location).is_file() and not Path(file_location).is_file():
+                    try:
+                        shutil.move(temp_location, file_location)
+                    except FileExistsError:
+                        pass
 
         if self.transform is None:
             masked_kspace = samples[0]
@@ -734,6 +748,7 @@ class CESTDataset(VolumeDataset):
             )
             return samples
         samples = self.transform(*samples)
+
         return samples
 
 
@@ -744,14 +759,23 @@ if __name__ == "__main__":
     from utils.matplotlib_viewer import scroll_slices
     from tqdm import trange
 
+
     mask = create_mask_for_mask_type("poisson_3d", [0], [6])
     transform = VarNetDataTransformVolume4D(mask_func=mask, use_seed=True)
     # cest_ds = CESTDataset("/home/woody/iwi5/iwi5044h/fastMRI/multicoil_train", "multicoil", transform, use_dataset_cache=False, cache_path="/home/woody/iwi5/iwi5044h/Code/fastMRI/cache_test")
-    cest_ds = CESTDataset(r"E:\Lukas\multicoil_val", "multicoil", transform=transform, use_dataset_cache=False,
+    cest_ds = RealCESTData(r"E:\Lukas\multicoil_val", "multicoil", transform=transform, use_dataset_cache=False,
                           cache_path=r"C:\Users\follels\Documents\fastMRI\cache\cache_val")
+
+    def replace_missing_data(kspace):
+        filled_kspace = deepcopy(kspace)
+        for offset in range(kspace.shape[1]):
+            filled_kspace[:, offset] = torch.where(filled_kspace[:, offset] == 0, torch.mean(kspace, 1), filled_kspace[:, offset])
+        return filled_kspace
+
 
     for i in trange(len(cest_ds)):
         item = cest_ds.__getitem__(i)
+        # masked_kspace = replace_missing_data(item.masked_kspace)
         print(f"\n\nItem {i}")
         # for offset in range(item.target.shape[0]):
         offset = 0
@@ -773,6 +797,7 @@ if __name__ == "__main__":
         volume = (volume - volume.min()) / (volume.max() - volume.min())
         volume = np.moveaxis(volume.numpy(), 0, -1)
         scroll_slices(volume, title=f"Sample {i} Offset {offset}")
+
 
     # from fastmri.models.varnet_4d import VarNet4D
     # varnet = VarNet4D(4, 2, 4, 3, 2).to("cuda")
