@@ -129,7 +129,7 @@ class MriModule(pl.LightningModule):
                 output = (output - output.min()) / (output.max() - output.min() + 1e-10)
                 target = (target - target.min()) / (target.max() - target.min() + 1e-10)
                 error = (error - error.min()) / (error.max() - error.min() + 1e-10)
-                default_reco = reco(val_logs["masked_kspace"][i], val_logs["target"][i])
+                default_reco = reco(val_logs["masked_kspace"].unsqueeze(0)[i], val_logs["target"].squeeze()[i])
                 default_reco = (default_reco - default_reco.min()) / (default_reco.max() - default_reco.min() + 1e-10)
                 self.log_image(f"{key}/target", target[:, target.shape[1] // 2, ...])
                 self.log_image(f"{key}/reconstruction", output[:, 0, output.shape[2] // 2, ...])

@@ -12,7 +12,7 @@ import fastmri
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.checkpoint import checkpoint, checkpoint_sequential
+from torch.utils.checkpoint import checkpoint
 from fastmri.data import transforms
 
 from fastmri.models.unet_4d import Unet4D
