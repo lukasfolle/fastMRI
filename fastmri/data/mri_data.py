@@ -577,28 +577,43 @@ class RealCESTData(VolumeDataset):
         self.load_data()
 
     def load_data(self):
-        kspace = np.stack([loadmat(r"U:\testCEST_CS\real.mat")["re"], loadmat(r"U:\testCEST_CS\imag.mat")["im"]], -1)
-        kspace = kspace.transpose((1, 3, 0, 2, 4, 5))
-        kspace = kspace[..., 0] + 1j * kspace[..., 1]
+        # Before: Export kspace data using matlab
+        root_path = r"E:\Lukas\CEST_Data"
+        scans = [os.path.join(root_path, file) for file in os.listdir(root_path) if "cest" in file.lower() and not "lowres" in file.lower()]
+        for scan in scans:
+            kspace = np.load(scan)
+            offset_targets = []
+            for offset in range(kspace.shape[1]):
+                target = fastmri.ifft3c(kspace[..., offset, :])
+                target = fastmri.complex_abs(target)
+                target = fastmri.rss(target, dim=0).squeeze()
+                offset_targets.append(target)
+            offset_targets = torch.stack(offset_targets, -1)
+            sample = (kspace, None, offset_targets, {"max": 0, "padding_left": 0, "padding_right": 0, "recon_size": [0, 0]}, "test")
+            self.cases.append(sample)
 
-        kspace = kspace * 1e3
+        # kspace = np.stack([loadmat(r"U:\testCEST_CS\real.mat")["re"], loadmat(r"U:\testCEST_CS\imag.mat")["im"]], -1)
+        # kspace = kspace.transpose((1, 3, 0, 2, 4, 5))
+        # kspace = kspace[..., 0] + 1j * kspace[..., 1]
 
-        targets = []
-        kspace_torch = np.stack((np.real(kspace), np.imag(kspace)), -1)
-        kspace_torch = torch.from_numpy(kspace_torch)
-        for offset in range(kspace_torch.shape[-2]):
-            target = fastmri.ifft3c(kspace_torch[..., offset, :])
-            target = fastmri.complex_abs(target)
-            target = fastmri.rss(target, dim=0).squeeze()
-            targets.append(target)
-        targets = torch.stack(targets, -1)
-        # c o d h w
-        kspace = torch.from_numpy(kspace_torch.numpy().transpose((0, 4, 1, 2, 3, 5)))
-        kspace = kspace[:, :8]  # Keep only first 8 offsets
-        targets = torch.from_numpy(targets.numpy().transpose((3, 0, 1, 2)))
-        targets = targets[:8]  # Keep only first 8 offsets
-        sample = (kspace, None, targets, {"max": 0, "padding_left": 0, "padding_right": 0, "recon_size": [0, 0]}, "test")
-        self.cases = [sample]
+        # kspace = kspace * 1e3
+
+        # targets = []
+        # kspace_torch = np.stack((np.real(kspace), np.imag(kspace)), -1)
+        # kspace_torch = torch.from_numpy(kspace_torch)
+        # for offset in range(kspace_torch.shape[-2]):
+        #     target = fastmri.ifft3c(kspace_torch[..., offset, :])
+        #     target = fastmri.complex_abs(target)
+        #     target = fastmri.rss(target, dim=0).squeeze()
+        #     targets.append(target)
+        # targets = torch.stack(targets, -1)
+        # # c o d h w
+        # kspace = torch.from_numpy(kspace_torch.numpy().transpose((0, 4, 1, 2, 3, 5)))
+        # kspace = kspace[:, :8]  # Keep only first 8 offsets
+        # targets = torch.from_numpy(targets.numpy().transpose((3, 0, 1, 2)))
+        # targets = targets[:8]  # Keep only first 8 offsets
+        # sample = (kspace, None, targets, {"max": 0, "padding_left": 0, "padding_right": 0, "recon_size": [0, 0]}, "test")
+        # self.cases = [sample]
 
     def __len__(self):
         return len(self.cases)
