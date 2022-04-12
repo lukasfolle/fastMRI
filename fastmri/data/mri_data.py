@@ -570,11 +570,13 @@ class RealCESTData(VolumeDataset):
                                            os.PathLike] = "/opt/tmp/dataset_cache.pkl",
                  num_cols: Optional[Tuple[int]] = None,
                  cache_path=None,
-                 num_offsets: int = 8):
+                 num_offsets: int = 8,
+                 number_of_simultaneous_offsets=8):
         super().__init__(root, challenge, transform, use_dataset_cache, sample_rate,
                          volume_sample_rate, dataset_cache_file, num_cols, cache_path)
         self.cases = []
         self.root = root
+        self.number_of_simultaneous_offsets = number_of_simultaneous_offsets
         self.load_data()
 
     def load_data(self):
@@ -595,15 +597,12 @@ class RealCESTData(VolumeDataset):
                 offset_targets.append(target)
                 
             offset_targets = torch.stack(offset_targets, 0)
-            for k in range(2):
-                kspace_offset_stack = kspace[:, int(k * 8):int((k + 1) * 8)]
-                offset_targets_stack = offset_targets[int(k * 8):int((k + 1) * 8)]
+            factor = int(16 / self.number_of_simultaneous_offsets)
+            for k in range(factor):
+                kspace_offset_stack = kspace[:, int(k * self.number_of_simultaneous_offsets):int((k + 1) * self.number_of_simultaneous_offsets)]
+                offset_targets_stack = offset_targets[int(k * self.number_of_simultaneous_offsets):int((k + 1) * self.number_of_simultaneous_offsets)]
                 sample = (kspace_offset_stack, None, offset_targets_stack, {"max": 0, "padding_left": 0, "padding_right": 0, "recon_size": [0, 0]}, "test")
                 self.cases.append(sample)
-            # kspace_offset_stack = kspace
-            # offset_targets_stack = offset_targets
-            # sample = (kspace_offset_stack, None, offset_targets_stack, {"max": 0, "padding_left": 0, "padding_right": 0, "recon_size": [0, 0]}, "test")
-            # self.cases.append(sample)
 
     def __len__(self):
         return len(self.cases)

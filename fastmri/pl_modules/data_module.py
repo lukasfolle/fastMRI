@@ -102,6 +102,7 @@ class FastMriDataModule(pl.LightningDataModule):
         distributed_sampler: bool = False,
         volume_training: bool = False,
         cache_dir=None,
+        number_of_simultaneous_offsets=8,
     ):
         """
         Args:
@@ -150,6 +151,7 @@ class FastMriDataModule(pl.LightningDataModule):
         self.distributed_sampler = distributed_sampler
         self.volume_training = volume_training
         self.cache_dir = cache_dir
+        self.number_of_simultaneous_offsets = number_of_simultaneous_offsets
 
     def _create_data_loader(
         self,
@@ -210,7 +212,8 @@ class FastMriDataModule(pl.LightningDataModule):
                     volume_sample_rate=volume_sample_rate,
                     challenge=self.challenge,
                     use_dataset_cache=self.use_dataset_cache_file,
-                    cache_path=path
+                    cache_path=path,
+                    number_of_simultaneous_offsets=self.number_of_simultaneous_offsets
                 )
             else:
                 dataset = SliceDataset(
@@ -357,6 +360,13 @@ class FastMriDataModule(pl.LightningDataModule):
             default=4,
             type=int,
             help="Number of workers to use in data loader",
+        )
+
+        parser.add_argument(
+            "--number_of_simultaneous_offsets",
+            default=8,
+            type=int,
+            help="Number of offsets to use simultaneously during a model forward pass.",
         )
 
         return parser

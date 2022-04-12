@@ -127,7 +127,7 @@ def build_args():
         default="combined_loss_offsets",
         type=str,
         help="Loss function to use",
-    )
+    )    
 
     # data config
     parser = FastMriDataModule.add_data_specific_args(parser)
@@ -136,6 +136,7 @@ def build_args():
         challenge="multicoil",  # only multicoil implemented for VarNet
         batch_size=batch_size,  # number of samples per batch
         test_path=None,  # path for test split, overwrites data_path
+        number_of_simultaneous_offsets=8,
     )
 
     parser.add_argument(
