@@ -67,7 +67,7 @@ def cli_main(args):
         volume_training=True,
         mask_center=False,
         accelerations=args.accelerations,
-        loss=args.loss
+        loss=args.loss,
     )
 
     # ------------
@@ -80,8 +80,8 @@ def cli_main(args):
     # ------------
     if args.mode == "train":
         trainer.fit(model, datamodule=data_module)
-    elif args.mode == "test":
-        trainer.test(model, datamodule=data_module)
+    elif args.mode == "valid":
+        trainer.validate(model, dataloaders=data_module.val_dataloader())
     else:
         raise ValueError(f"unrecognized mode {args.mode}")
 
@@ -103,7 +103,7 @@ def build_args():
     parser.add_argument(
         "--mode",
         default="train",
-        choices=("train", "test"),
+        choices=("train", "valid", "test"),
         type=str,
         help="Operation mode",
     )
@@ -172,6 +172,8 @@ def build_args():
         num_workers=0,
         log_every_n_steps=1,
         precision=16,
+        # overfit_batches=1,
+        # check_val_every_n_epoch=5,
     )
 
     args = parser.parse_args()
@@ -196,8 +198,8 @@ def build_args():
         ckpt_list = sorted(checkpoint_dir.glob("*.ckpt"), key=os.path.getmtime)
         if ckpt_list:
             args.resume_from_checkpoint = str(ckpt_list[-1])
-    # print("Not resuming from checkpoint!")
-    # args.resume_from_checkpoint = None
+    print("Not resuming from checkpoint!")
+    args.resume_from_checkpoint = None
 
     return args
 
@@ -215,3 +217,33 @@ if __name__ == "__main__":
     run_cli()
 
 # TODO: Try out pretrained network as init
+# Run 30: 3 training cases
+# Run 32: 1 training case
+# Run 33: Overfit one sample
+# Test less downsampling influence
+# Run 55: +tv, denser outer sampling
+# Run 56: dc_weight 1 -> 0.5
+# Run 57: 6 3 8 3 8 (7.2M) -> 4 3 8 3 8 (5.2M)
+# Run 58: US 4 6 -> 3 5
+# Run 59: US 4 6 -> 5 7
+# Run 60: US 4 6 -> 2 4
+# Run 61/62: US 4 6 -> 1 1
+# Run 63: US 4 6 -> 2 4, mse loss
+# Run 64: US 4 6 -> 3 5, mse loss
+# Run 71: US 3 5, mse loss, all offsets (2x8) --> Prediction an Kathi schicken
+# Run 72: US 3 5, mse + ssim loss, all offsets (2x8) (better than mse alone)
+# Run 73: US 3 5, mse(l2) + ssim loss, all offsets (2x8)
+# Run 74: US 3 5, ssim loss, all offsets (2x8) (best so far)
+# Run 75: US 3 5, ssim loss, all offsets (2x8), 4 3 8 3 8 (5.2M)
+# Run 76: US 3 5, ssim loss, all offsets (2x8), 2 3 8 3 8 (3.1M)
+# Run 77: US 3 5, ssim loss, all offsets (2x8), 8 3 8 3 8 (9.3M)
+# Run 78: US 3 5, ssim loss, all offsets (2x8), dense center sampling (better than 74), sampling closer to center more important
+# Changed to offset-wise training, US 2 6 (7.2M & 45GB -> 2.5M & 20GB)
+# Run 79: US 2 6, ssim loss, single offsets
+# Run 80: US 2 6, mse loss, single offset
+# Back to (almost) all offset training
+# Run 81: US 2 6, ssim loss (2x8 offsets)
+
+# Try out increasing amount of offsets
+
+# Test varying us masks

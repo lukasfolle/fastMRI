@@ -453,6 +453,7 @@ class VarNetDataTransform:
         """
         self.mask_func = mask_func
         self.use_seed = use_seed
+        self.cached_mask = None
 
     def __call__(
         self,
@@ -638,18 +639,27 @@ class VarNetDataTransformVolume4D(VarNetDataTransform):
                    seed: Optional[Union[int, Tuple[int, ...]]] = None,
                    padding: Optional[Sequence[int]] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, int]:
-        shape = (1, data.shape[-4], data.shape[-2], data.shape[-1])
-        masks = torch.zeros((data.shape[1], *shape)).squeeze()
-        num_low_frequencies = None
-        for offset in range(data.shape[1]):
-            if seed is None:
-                seed_offset = None
-            else:
-                seed_offset = (offset, *seed)
-            mask, num_low_frequencies = mask_func(shape, offset, seed_offset)
-            mask = torch.stack((mask, mask), -1)
-            masks[offset] = mask.squeeze()
-        masks = masks.unsqueeze(0).unsqueeze(-3)
+        if self.cached_mask is None:
+            shape = (1, data.shape[-4], data.shape[-3], data.shape[-1])
+            masks = torch.zeros((data.shape[1], *shape)).squeeze()
+            num_low_frequencies = None
+            for offset in range(data.shape[1]):
+                if seed is None:
+                    seed_offset = None
+                else:
+                    seed_offset = (offset, *seed)
+                mask, num_low_frequencies = mask_func(shape, offset, seed_offset)
+                mask = torch.stack((mask, mask), -1)
+                masks[offset] = mask.squeeze()
+            self.cached_mask = masks
+            # masks, num_low_frequencies = mask_func(shape, offset)
+            # masks = torch.stack((masks, masks), -1)
+            # self.cached_mask = masks
+            # num_low_frequencies = 0
+        else:
+            masks = self.cached_mask
+            num_low_frequencies = 0
+        masks = masks.unsqueeze(0).unsqueeze(-2)
         masked_data = data * masks + 0.0  # the + 0.0 removes the sign of the zeros
 
         return masked_data, masks, num_low_frequencies

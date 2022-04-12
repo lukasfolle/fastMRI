@@ -12,6 +12,19 @@ from torch.autograd import Variable
 from math import exp
 
 
+def total_variation(img: torch.Tensor) -> torch.Tensor:
+    pixel_dif1 = img[..., 1:, :, :] - img[..., :-1, :, :]
+    pixel_dif2 = img[..., 1:, :] - img[..., :-1, :]
+    pixel_dif3 = img[..., 1:] - img[..., :, :-1]
+
+    reduce_axes = (-4, -3, -2, -1)
+    res1 = pixel_dif1.abs().sum(dim=reduce_axes)
+    res2 = pixel_dif2.abs().sum(dim=reduce_axes)
+    res3 = pixel_dif3.abs().sum(dim=reduce_axes)
+
+    return res1 + res2 + res3
+
+
 class SSIMLoss(nn.Module):
     """
     SSIM loss module.
@@ -231,6 +244,8 @@ def combined_loss(img1, img2):
 
 
 def combined_loss_offsets(img1, img2):
-    mse_loss = F.l1_loss(img1, img2)
-    # ssim_loss = sum([ssim3D_loss(img1[:, offset].unsqueeze(0), img2[:, offset].unsqueeze(0)) for offset in range(img1.shape[1])]) / img1.shape[1]
-    return mse_loss  # 0.9 * ssim_loss + 0.1 *
+    # mse_loss = F.l1_loss(img1, img2)
+    # mse_loss = F.mse_loss(img1, img2)
+    # tv = total_variation(img1)
+    ssim_loss = sum([ssim3D_loss(img1[:, offset].unsqueeze(0), img2[:, offset].unsqueeze(0)) for offset in range(img1.shape[1])]) / img1.shape[1]
+    return ssim_loss  # 0.9 * ssim_loss + 0.1 * mse_loss

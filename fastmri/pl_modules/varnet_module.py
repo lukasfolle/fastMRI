@@ -13,6 +13,9 @@ import torch.nn.functional as F
 from fastmri.data import transforms
 from fastmri.models import VarNet, VarNet3D, VarNet4D
 from fastmri.losses import combined_loss, ssim3D_loss, combined_loss_offsets
+import nibabel as nib
+import numpy as np
+import os
 
 from .mri_module import MriModule
 from fastmri.data.cest_test_data import generate_test_sample
@@ -128,7 +131,7 @@ class VarNetModule(MriModule):
 
         target, output = transforms.center_crop_to_smallest(batch.target, output)
         loss = self.loss(
-            output, target.unsqueeze(0),  # data_range=batch.max_value
+            output, target.unsqueeze(0),
         )
         self.log("train_loss", loss)
 
@@ -141,11 +144,13 @@ class VarNetModule(MriModule):
         )
         target, output = transforms.center_crop_to_smallest(batch.target, output)
         loss = self.loss(
-            output, target.unsqueeze(0),  # data_range=batch.max_value
+            output, target.unsqueeze(0),
         )
         self.log("validation_loss", loss)
         if self.current_epoch % 10 == 0:
             self.log_zero_filling_metrics(batch.masked_kspace_no_imputation[None], batch.target[None])
+            self.save_predictions_to_nifti(output, target, batch.masked_kspace_no_imputation, batch_idx)
+            
         return {
             "batch_idx": batch_idx,
             "fname": batch.fname,
@@ -177,12 +182,6 @@ class VarNetModule(MriModule):
 
     def validation_epoch_end(self, val_logs):
         super().validation_epoch_end(val_logs)
-        # kspace, mask, num_low_frequencies = generate_test_sample(self.device)
-        # prediction = self(kspace, mask, num_low_frequencies)
-        # prediction = prediction.squeeze().cpu().numpy()
-        # prediction = (prediction - prediction.min()) / (prediction.max() - prediction.min() + 1e-6)
-        # prediction = prediction[2, 2][None]
-        # self.log_image("val/real_cest_prediction", prediction)
 
     def log_zero_filling_metrics(self, kspace, target):
         metrics = {"mse": 0, "ssim": 0, "psnr": 0}
@@ -194,6 +193,8 @@ class VarNetModule(MriModule):
             volume = fastmri.complex_abs(volume)
             volume = fastmri.rss(volume, dim=0)
             t, volume = transforms.center_crop_to_smallest(t, volume)
+            t = (t - t.min()) / (t.max() - t.min())
+            volume = (volume - volume.min()) / (volume.max() - volume.min())
             t = t.cpu().numpy()
             volume = volume.cpu().numpy()
             metrics["mse"] = metrics["mse"] + normalized_root_mse(t, volume)
@@ -206,15 +207,35 @@ class VarNetModule(MriModule):
         self.log("val_metrics/psnr_zfil", metrics["psnr"])
         self.log("val_metrics/ssim_zfil", metrics["ssim"])
 
+    def save_predictions_to_nifti(self, output, target, masked_kspace_no_imputation, batch_idx):
+        affine_matrix = np.array([[4, 0, 0, 0], [0, 1.203, 0, 0], [0, 0, 1.203, 0], [0, 0, 0, 1]])
+        reco_nii = nib.Nifti1Image(np.flip(output.cpu().numpy().squeeze().transpose((1, 2, 3, 0)), 2), affine=affine_matrix)
+        nib.save(reco_nii, os.path.join(r"E:\Lukas\cest_data\Probanden\Mareike\prediction", f"val_prediction_{batch_idx}_epoch_{self.current_epoch}.nii.gz"))
+        reco_nii = nib.Nifti1Image(np.flip(target.cpu().numpy().squeeze().transpose((1, 2, 3, 0)), 2), affine=affine_matrix)
+        nib.save(reco_nii, os.path.join(r"E:\Lukas\cest_data\Probanden\Mareike\prediction", f"val_target_{batch_idx}_epoch_{self.current_epoch}.nii.gz"))
+        default_reco = []
+        for offset in range(masked_kspace_no_imputation.shape[1]):
+            k_space_downsampled = masked_kspace_no_imputation[:, offset].squeeze()
+            k_space_downsampled = torch.view_as_real(k_space_downsampled[..., 0] + 1j * k_space_downsampled[..., 1])
+            volume = fastmri.ifft3c(k_space_downsampled)
+            volume = fastmri.complex_abs(volume)
+            volume = fastmri.rss(volume, dim=0)
+            default_reco.append(volume)
+        target, default_reco = transforms.center_crop_to_smallest(target, torch.stack(default_reco, 0))
+        reco_nii = nib.Nifti1Image(np.flip(default_reco.cpu().numpy().squeeze().transpose((1, 2, 3, 0)), 2), affine=affine_matrix)
+        nib.save(reco_nii, os.path.join(r"E:\Lukas\cest_data\Probanden\Mareike\prediction", f"val_default_reco_{batch_idx}_epoch_{self.current_epoch}.nii.gz"))
+
     def configure_optimizers(self):
         optim = torch.optim.Adam(
             self.parameters(), lr=self.lr, weight_decay=self.weight_decay
         )
-        scheduler = torch.optim.lr_scheduler.StepLR(
-            optim, self.lr_step_size, self.lr_gamma
-        )
+        # scheduler = torch.optim.lr_scheduler.StepLR(
+        #     optim, self.lr_step_size, self.lr_gamma
+        # )
 
-        return [optim], [scheduler]
+        # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optim)
+
+        return {"optimizer": optim}  # , "lr_scheduler": scheduler, "monitor": "train_loss"}
 
     @staticmethod
     def add_model_specific_args(parent_parser):  # pragma: no-cover

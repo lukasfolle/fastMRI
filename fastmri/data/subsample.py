@@ -86,6 +86,7 @@ class MaskFunc:
         self,
         shape: Sequence[int],
         offset: Optional[int] = None,
+        num_offsets=8,
         seed: Optional[Union[int, Tuple[int, ...]]] = None,
     ) -> Tuple[torch.Tensor, int]:
         """
@@ -106,7 +107,7 @@ class MaskFunc:
 
         with temp_seed(self.rng, seed):
             center_mask, accel_mask, num_low_frequencies = self.sample_mask(
-                shape, offset, seed
+                shape, offset, num_offsets, seed
             )
 
         # combine masks together
@@ -215,6 +216,7 @@ class MaskFunc3D(MaskFunc):
         self,
         shape: Sequence[int],
         offset: Optional[int],
+        num_offsets=16,
         seed = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, int]:
         """
@@ -240,7 +242,7 @@ class MaskFunc3D(MaskFunc):
 
         acceleration_mask = self.reshape_mask(
             self.calculate_acceleration_mask_3D(
-                num_cols, acceleration, offset, num_low_frequencies, shape, seed
+                num_cols, acceleration, offset, num_low_frequencies, shape, seed # num_offsets, seed
             ),
             shape
         )
@@ -536,12 +538,12 @@ class PoissonDensitiyMask3D(MaskFunc3D):
         self.rng_new = np.random.default_rng(seed)
         inner_shape = ((shape[1] // 2) & ~1, (shape[2] // 2) & ~1)
         accu_inner = np.zeros((inner_shape[0], inner_shape[1]), dtype=np.int32)
-        PS = PoissonSampler(inner_shape[0], inner_shape[1], 4, 2, 42, 0, 0.7)
+        PS = PoissonSampler(inner_shape[0], inner_shape[1], 2, 2, 42, 0, 0.7)
         mask_inner = PS.generate(self.rng_new, accu_inner)
 
         outer_shape = (shape[1] & ~1, shape[2] & ~1)
         accu_outer = np.zeros((outer_shape[0], outer_shape[1]), dtype=np.int32)
-        PS = PoissonSampler(outer_shape[0], outer_shape[1], 9, 2, 42, 0, 0.7)
+        PS = PoissonSampler(outer_shape[0], outer_shape[1], 6, 4, 42, 0, 0.7)
         mask_combined = PS.generate(self.rng_new, accu_outer)
         mask_combined[mask_combined.shape[0] // 2 - inner_shape[0] // 2:mask_combined.shape[0] // 2 + inner_shape[0] // 2,
                       mask_combined.shape[1] // 2 - inner_shape[1] // 2:mask_combined.shape[1] // 2 + inner_shape[1] // 2] = mask_inner
@@ -550,6 +552,30 @@ class PoissonDensitiyMask3D(MaskFunc3D):
         final_mask[0:mask_combined.shape[0], 0:mask_combined.shape[1]] = mask_combined
         return final_mask[None]
 
+
+class CartesianOffsetMask3D(MaskFunc3D):
+    def __init__(self, accelerations, allow_any_combination=False, seed=None):
+        super().__init__([0], accelerations, allow_any_combination, seed)
+        self.rng_new = np.random.default_rng(seed)
+
+    def calculate_acceleration_mask_3D(
+        self,
+        num_cols: int,
+        acceleration: int,
+        offset: Optional[int],
+        num_low_frequencies: int,
+        shape,
+        num_offsets,
+        seed,
+    ) -> np.ndarray:
+        undersampling_masks = np.zeros((num_offsets, *shape[1:-1]))
+        for offset in range(num_offsets):
+            pattern = np.zeros(num_offsets)
+            pattern[offset] = 1
+            undersampling_masks[offset] = np.tile(pattern, int(np.prod(shape[1:-1]) / num_offsets)).reshape(*shape[1:-1])
+        undersampling_masks[:, int(shape[1] * 2/6):int(shape[1] * 4/6), int(shape[2] * 2/6):int(shape[2] * 4/6)] = 1
+        return undersampling_masks[None]
+    
 
 class MagicMaskFunc(MaskFunc):
     """
@@ -716,14 +742,32 @@ def create_mask_for_mask_type(
         return PoissonDensitiyMask3D(accelerations)
     elif mask_type_str == "variabledensity3d":
         return VariableDensitiyMask3D(accelerations)
+    elif mask_type_str == "cartesian_offset3d":
+        return CartesianOffsetMask3D(accelerations)
     else:
         raise ValueError(f"{mask_type_str} not supported")
 
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
+    import numpy as np
     vdm = PoissonDensitiyMask3D([6])
-    mask = vdm([1, 15, 91, 1])
+    mask = vdm([1, 20, 128, 1])
+    print(f"Acceleration: {mask[0].numel() / mask[0].sum()}")
     plt.imshow(mask[0].squeeze())
     plt.show()
 
+    # def create_mask(shape, num_offsets=16):
+    #     undersampling_masks = np.zeros((num_offsets, *shape))
+    #     for offset in range(num_offsets):
+    #         pattern = np.zeros(num_offsets)
+    #         pattern[offset] = 1
+    #         undersampling_masks[offset] = np.tile(pattern, int(np.prod(shape) / num_offsets)).reshape(*shape)
+    #     undersampling_masks[:, int(shape[0] * 2/6):int(shape[0] * 4/6), int(shape[1] * 2/6):int(shape[1] * 4/6)] = 1
+    #     return undersampling_masks
+    
+    # masks = create_mask((20, 128), 16)
+    # print(np.prod(masks.shape) / masks.sum())
+    # plt.imshow(masks[0])
+    # plt.show()
+    

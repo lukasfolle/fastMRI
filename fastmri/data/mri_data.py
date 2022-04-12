@@ -448,41 +448,41 @@ class VolumeDataset(torch.utils.data.Dataset):
 
         # check if our dataset is in the cache
         # if there, use that metadata, if not, then regenerate the metadata
-        if dataset_cache.get(root) is None or not use_dataset_cache:
-            files = list(Path(root).iterdir())
-            for fname in sorted(files):
-                metadata, num_slices = SliceDataset._retrieve_metadata(fname)
-                self.examples += [(fname, metadata)]
+        # if dataset_cache.get(root) is None or not use_dataset_cache:
+        #     files = list(Path(root).iterdir())
+        #     for fname in sorted(files):
+        #         metadata, num_slices = SliceDataset._retrieve_metadata(fname)
+        #         self.examples += [(fname, metadata)]
 
-            if dataset_cache.get(root) is None and use_dataset_cache:
-                dataset_cache[root] = self.examples
-                logging.info(f"Saving dataset cache to {self.dataset_cache_file}.")
-                with open(self.dataset_cache_file, "wb") as f:
-                    pickle.dump(dataset_cache, f)
-        else:
-            logging.info(f"Using dataset cache from {self.dataset_cache_file}.")
-            self.examples = dataset_cache[root]
+        #     if dataset_cache.get(root) is None and use_dataset_cache:
+        #         dataset_cache[root] = self.examples
+        #         logging.info(f"Saving dataset cache to {self.dataset_cache_file}.")
+        #         with open(self.dataset_cache_file, "wb") as f:
+        #             pickle.dump(dataset_cache, f)
+        # else:
+        #     logging.info(f"Using dataset cache from {self.dataset_cache_file}.")
+        #     self.examples = dataset_cache[root]
 
-        # subsample if desired
-        if sample_rate < 1.0:  # sample by slice
-            random.shuffle(self.examples)
-            num_examples = round(len(self.examples) * sample_rate)
-            self.examples = self.examples[:num_examples]
-        elif volume_sample_rate < 1.0:  # sample by volume
-            vol_names = sorted(list(set([f[0].stem for f in self.examples])))
-            random.shuffle(vol_names)
-            num_volumes = round(len(vol_names) * volume_sample_rate)
-            sampled_vols = vol_names[:num_volumes]
-            self.examples = [
-                example for example in self.examples if example[0].stem in sampled_vols
-            ]
+        # # subsample if desired
+        # if sample_rate < 1.0:  # sample by slice
+        #     random.shuffle(self.examples)
+        #     num_examples = round(len(self.examples) * sample_rate)
+        #     self.examples = self.examples[:num_examples]
+        # elif volume_sample_rate < 1.0:  # sample by volume
+        #     vol_names = sorted(list(set([f[0].stem for f in self.examples])))
+        #     random.shuffle(vol_names)
+        #     num_volumes = round(len(vol_names) * volume_sample_rate)
+        #     sampled_vols = vol_names[:num_volumes]
+        #     self.examples = [
+        #         example for example in self.examples if example[0].stem in sampled_vols
+        #     ]
 
-        if num_cols:
-            self.examples = [
-                ex
-                for ex in self.examples
-                if ex[1]["encoding_size"][1] in num_cols  # type: ignore
-            ]
+        # if num_cols:
+        #     self.examples = [
+        #         ex
+        #         for ex in self.examples
+        #         if ex[1]["encoding_size"][1] in num_cols  # type: ignore
+        #     ]
 
     def __len__(self):
         return len(self.examples)
@@ -574,46 +574,36 @@ class RealCESTData(VolumeDataset):
         super().__init__(root, challenge, transform, use_dataset_cache, sample_rate,
                          volume_sample_rate, dataset_cache_file, num_cols, cache_path)
         self.cases = []
+        self.root = root
         self.load_data()
 
     def load_data(self):
-        # Before: Export kspace data using matlab
-        root_path = r"E:\Lukas\CEST_Data"
+        root_path = self.root  # r"E:\Lukas\cest_data\Probanden\Mareike\output\train"
         scans = [os.path.join(root_path, file) for file in os.listdir(root_path) if "cest" in file.lower() and not "lowres" in file.lower()]
         for scan in scans:
-            kspace = np.load(scan)
+            with h5py.File(scan, "r") as f:
+                kspace = np.array(f["kspace"])  # offset, slices, readout, channels, phase
+            kspace = 100 * (kspace["real"] + 1j* kspace["imag"])
+            kspace = np.transpose(kspace, (3, 0, 1, 2, 4))  # channels, offsets, slices, readout, phase
+            kspace = torch.from_numpy(np.stack((kspace.real, kspace.imag), -1))
             offset_targets = []
             for offset in range(kspace.shape[1]):
-                target = fastmri.ifft3c(kspace[..., offset, :])
+                target = fastmri.ifft3c(kspace[:, offset])
                 target = fastmri.complex_abs(target)
                 target = fastmri.rss(target, dim=0).squeeze()
+                target = transforms.complex_center_crop_3d(target, (target.shape[0], 128, 128))
                 offset_targets.append(target)
-            offset_targets = torch.stack(offset_targets, -1)
-            sample = (kspace, None, offset_targets, {"max": 0, "padding_left": 0, "padding_right": 0, "recon_size": [0, 0]}, "test")
-            self.cases.append(sample)
-
-        # kspace = np.stack([loadmat(r"U:\testCEST_CS\real.mat")["re"], loadmat(r"U:\testCEST_CS\imag.mat")["im"]], -1)
-        # kspace = kspace.transpose((1, 3, 0, 2, 4, 5))
-        # kspace = kspace[..., 0] + 1j * kspace[..., 1]
-
-        # kspace = kspace * 1e3
-
-        # targets = []
-        # kspace_torch = np.stack((np.real(kspace), np.imag(kspace)), -1)
-        # kspace_torch = torch.from_numpy(kspace_torch)
-        # for offset in range(kspace_torch.shape[-2]):
-        #     target = fastmri.ifft3c(kspace_torch[..., offset, :])
-        #     target = fastmri.complex_abs(target)
-        #     target = fastmri.rss(target, dim=0).squeeze()
-        #     targets.append(target)
-        # targets = torch.stack(targets, -1)
-        # # c o d h w
-        # kspace = torch.from_numpy(kspace_torch.numpy().transpose((0, 4, 1, 2, 3, 5)))
-        # kspace = kspace[:, :8]  # Keep only first 8 offsets
-        # targets = torch.from_numpy(targets.numpy().transpose((3, 0, 1, 2)))
-        # targets = targets[:8]  # Keep only first 8 offsets
-        # sample = (kspace, None, targets, {"max": 0, "padding_left": 0, "padding_right": 0, "recon_size": [0, 0]}, "test")
-        # self.cases = [sample]
+                
+            offset_targets = torch.stack(offset_targets, 0)
+            for k in range(2):
+                kspace_offset_stack = kspace[:, int(k * 8):int((k + 1) * 8)]
+                offset_targets_stack = offset_targets[int(k * 8):int((k + 1) * 8)]
+                sample = (kspace_offset_stack, None, offset_targets_stack, {"max": 0, "padding_left": 0, "padding_right": 0, "recon_size": [0, 0]}, "test")
+                self.cases.append(sample)
+            # kspace_offset_stack = kspace
+            # offset_targets_stack = offset_targets
+            # sample = (kspace_offset_stack, None, offset_targets_stack, {"max": 0, "padding_left": 0, "padding_right": 0, "recon_size": [0, 0]}, "test")
+            # self.cases.append(sample)
 
     def __len__(self):
         return len(self.cases)
@@ -621,6 +611,8 @@ class RealCESTData(VolumeDataset):
     def __getitem__(self, i):
         if len(self.cases) == 0:
             self.load_data()
+            if len(self.cases) == 0:
+                raise FileNotFoundError("Could not find any case.")
         sample = self.cases[i]
         if self.transform is None:
             return sample
@@ -778,7 +770,7 @@ if __name__ == "__main__":
     mask = create_mask_for_mask_type("poisson_3d", [0], [6])
     transform = VarNetDataTransformVolume4D(mask_func=mask, use_seed=True)
     # cest_ds = CESTDataset("/home/woody/iwi5/iwi5044h/fastMRI/multicoil_train", "multicoil", transform, use_dataset_cache=False, cache_path="/home/woody/iwi5/iwi5044h/Code/fastMRI/cache_test")
-    cest_ds = RealCESTData(r"E:\Lukas\multicoil_val", "multicoil", transform=transform, use_dataset_cache=False,
+    cest_ds = RealCESTData(r"E:\Lukas\cest_data\Probanden\Mareike\output\multicoil_train", "multicoil", transform=transform, use_dataset_cache=False,
                           cache_path=r"C:\Users\follels\Documents\fastMRI\cache\cache_val")
 
     def replace_missing_data(kspace):
@@ -794,9 +786,11 @@ if __name__ == "__main__":
         print(f"\n\nItem {i}")
         # for offset in range(item.target.shape[0]):
         offset = 0
-        mask = item.mask.numpy().squeeze()
-        vol = item.target[offset].numpy().squeeze()
-        mask = mask[offset, ..., 0]
+        mask = item.mask.numpy().squeeze()[..., 0]
+        # vol = item.target[offset].numpy().squeeze()
+        vol = item.target.numpy().squeeze()
+        print(vol.shape)
+        # mask = mask[offset, ..., 0]
         plt.imshow(mask)
         plt.title(f"Sample {i}, offset {offset}")
         plt.show()
@@ -804,7 +798,7 @@ if __name__ == "__main__":
         vol = np.moveaxis(vol, 0, -1)
         scroll_slices(vol, title=f"Sample {i} Offset {offset}")
 
-        k_space_downsampled = item.masked_kspace[:, offset]
+        k_space_downsampled = item.masked_kspace#[:, offset]
         k_space_downsampled = torch.view_as_real(k_space_downsampled[..., 0] + 1j * k_space_downsampled[..., 1])
         volume = fastmri.ifft3c(k_space_downsampled)
         volume = fastmri.complex_abs(volume)

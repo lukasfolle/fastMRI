@@ -282,11 +282,6 @@ class VarNet4D(nn.Module):
         for cascade in self.cascades:
             kspace_pred = cascade(kspace_pred, masked_kspace, mask, sens_maps)
         return fastmri.rss(fastmri.complex_abs(fastmri.ifft3c(kspace_pred)), dim=1)
-        # image = fastmri.rss(fastmri.complex_abs(fastmri.ifft3c(kspace_pred)), dim=1)
-        # image = image.unsqueeze(0)
-        # image = self.final_layers(image)
-        # image = image.squeeze(0)
-        # return image
 
 
 class VarNetBlock(nn.Module):
