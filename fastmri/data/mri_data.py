@@ -577,6 +577,7 @@ class RealCESTData(VolumeDataset):
         self.cases = []
         self.root = root
         self.number_of_simultaneous_offsets = number_of_simultaneous_offsets
+        print(f"Using {number_of_simultaneous_offsets} of offsets simultaneously.")
         self.load_data()
 
     def load_data(self):

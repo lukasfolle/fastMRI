@@ -362,11 +362,11 @@ class FastMriDataModule(pl.LightningDataModule):
             help="Number of workers to use in data loader",
         )
 
-        parser.add_argument(
-            "--number_of_simultaneous_offsets",
-            default=8,
-            type=int,
-            help="Number of offsets to use simultaneously during a model forward pass.",
-        )
+        # parser.add_argument(
+        #     "--number_of_simultaneous_offsets",
+        #     default=8,
+        #     type=int,
+        #     help="Number of offsets to use simultaneously during a model forward pass.",
+        # )
 
         return parser

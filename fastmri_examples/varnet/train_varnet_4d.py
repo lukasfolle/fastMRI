@@ -48,7 +48,8 @@ def cli_main(args):
         distributed_sampler=(args.accelerator in ("ddp", "ddp_cpu")),
         volume_training=True,
         use_dataset_cache_file=False,
-        cache_dir=args.cache_dir
+        cache_dir=args.cache_dir,
+        number_of_simultaneous_offsets=args.number_of_simultaneous_offsets
     )
 
     # ------------
@@ -127,7 +128,14 @@ def build_args():
         default="combined_loss_offsets",
         type=str,
         help="Loss function to use",
-    )    
+    )
+    
+    parser.add_argument(
+        "--number_of_simultaneous_offsets",
+        default=8,
+        type=int,
+        help="Number of simultaneous offsets",
+    )
 
     # data config
     parser = FastMriDataModule.add_data_specific_args(parser)
@@ -150,9 +158,9 @@ def build_args():
     parser = VarNetModule.add_model_specific_args(parser)
     parser.set_defaults(
         num_cascades=6,  # number of unrolled iterations
-        pools=3,  # number of pooling layers for U-Net
+        pools=2,  # number of pooling layers for U-Net
         chans=8,  # number of top-level channels for U-Net
-        sens_pools=3,  # number of pooling layers for sense est. U-Net
+        sens_pools=2,  # number of pooling layers for sense est. U-Net
         sens_chans=8,  # number of top-level channels for sense est. U-Net
         lr=0.001,  # Adam learning rate
         lr_step_size=100000,  # epoch at which to decrease learning rate
@@ -199,6 +207,7 @@ def build_args():
         ckpt_list = sorted(checkpoint_dir.glob("*.ckpt"), key=os.path.getmtime)
         if ckpt_list:
             args.resume_from_checkpoint = str(ckpt_list[-1])
+    # args.resume_from_checkpoint = r"C:\Users\follels\Documents\fastMRI\logs\varnet\varnet_demo\checkpoints\fastmri_checkpoint_35732.ckpt"
     print("Not resuming from checkpoint!")
     args.resume_from_checkpoint = None
 
@@ -243,8 +252,20 @@ if __name__ == "__main__":
 # Run 79: US 2 6, ssim loss, single offsets
 # Run 80: US 2 6, mse loss, single offset
 # Back to (almost) all offset training
-# Run 81: US 2 6, ssim loss (2x8 offsets)
+# Run 81: US 2 6, ssim loss (2x8 offsets) (best so far)
 
-# Try out increasing amount of offsets
+# Run 82: US 2 6 , Model 6 2 8 2 8 (1.8M), 4 offsets
+# Run 83: US 2 6 , Model 6 2 8 2 8, 8 offsets
+# Run 84: US 2 6 , Model 6 3 8 3 8, 8 offsets (best so far)
+# Run 85: US 2 6 , Model 6 3 8 3 8, 8 offsets (pretrained fastMRI)
+# Run 86: US 2 6 , Model 6 3 8 3 8, 8 offsets, ssim loss, no kspace imputation (considerably worse than 84)
 
-# Test varying us masks
+# Optimizer channels for 4 offsets
+# Run 87: US 26, Model 6 1 8 2 8 (274K), 4 offsets
+# Run 88: US 26, Model 6 2 8 2 8, 4 offsets 
+# Run 89: US 26, Model 6 4 8 2 8, 4 offsets 
+# Run 90: US 26, Model 6 8 8 2 8, 4 offsets 
+# Run 91: US 26, Model 6 12 8 2 8, 4 offsets 
+# Run 92: US 26, Model 6 16 8 2 8 (6.2M), 4 offsets
+
+# TODO: Optimize 1 offset 3D model for optimal performance with varying number of channels
