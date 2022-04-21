@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from scipy.io import loadmat
+from scipy.io import loadmat, savemat
 from skimage.metrics import peak_signal_noise_ratio, structural_similarity, normalized_root_mse
 
 import fastmri
@@ -24,7 +24,7 @@ class Dataset:
         mask = create_mask_for_mask_type("poisson_3d", [0], [6])
         transform = VarNetDataTransformVolume4D(mask_func=mask, use_seed=True)
         cest_ds = RealCESTData(r"E:\Lukas\cest_data\Probanden\Mareike\output\multicoil_train", "multicoil", transform=transform, use_dataset_cache=False,
-                                cache_path=r"C:\Users\follels\Documents\fastMRI\cache\cache_val")
+                                cache_path=r"C:\Users\follels\Documents\fastMRI\cache\cache_val", number_of_simultaneous_offsets=16)
         self.dataset = cest_ds
     
     def get(self, i):
@@ -35,26 +35,31 @@ def main():
     ds = Dataset()
     item = ds.get(0)
     
-    # Select first offset
-    masked_kspace = item.masked_kspace[:, 0, ..., 0] + 1j * item.masked_kspace[:, 0, ..., 1]
-    masked_kspace_mps = (item.masked_kspace[..., 0] + 1j * item.masked_kspace[..., 1]).sum(1)
+    masked_kspace = item.masked_kspace_no_imputation[..., 0] + 1j * item.masked_kspace_no_imputation[..., 1]
+    masked_kspace_mps = masked_kspace.sum(1)
+    
+    # Save for usage in Matlab
+    d = {"acs": masked_kspace_mps.numpy(), "kspace": masked_kspace.numpy(), "target": item.target.numpy()}
+    savemat(r"W:\radiologie\data\MR-Physik\Mitarbeiter\Tkotz\tools_Lukas\Test\exchange.mat", d)
+    
     mask = item.mask[:, 0]
     target = item.target[0]
     target = target.numpy()
     print(f"Kspace shape: ({masked_kspace.shape})")
     
     # Zero-filling reco
-    volume = fastmri.ifft3c(torch.view_as_real(masked_kspace))
+    volume = fastmri.ifft3c(torch.view_as_real(masked_kspace[:, 0]))
     volume = fastmri.complex_abs(volume)
     volume = fastmri.rss(volume, dim=0)
     volume = volume[..., 64:192]
     volume = volume.numpy()
     
     # CS reco
-    img_tv = loadmat(r"W:\radiologie\data\MR-Physik\Mitarbeiter\Tkotz\tools_Lukas\Test\cs_reco_offsets")["volume_offsets"]
+    # Do this in Matlab
+    img_tv = loadmat(r"W:\radiologie\data\MR-Physik\Mitarbeiter\Tkotz\tools_Lukas\Test\exchange_recon")["volume_offsets"]
     img_tv = np.abs(np.transpose(img_tv, (2, 0, 1, 3))[..., 0])
     
-    # Norm
+    # Norm Should this be done? (Reduces performance)
     target = zero_one_norm(target)
     volume = zero_one_norm(volume)
     img_tv = zero_one_norm(img_tv)
