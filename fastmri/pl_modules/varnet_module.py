@@ -18,7 +18,6 @@ import numpy as np
 import os
 
 from .mri_module import MriModule
-from fastmri.data.cest_test_data import generate_test_sample
 from skimage.metrics import peak_signal_noise_ratio, structural_similarity, normalized_root_mse
 
 

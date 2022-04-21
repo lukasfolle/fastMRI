@@ -5,6 +5,7 @@ from skimage.metrics import peak_signal_noise_ratio, structural_similarity, norm
 
 import fastmri
 from fastmri.data.transforms import VarNetDataTransformVolume4D
+from fastmri.pl_modules import VarNetModule
 from fastmri.data.subsample import create_mask_for_mask_type
 from fastmri.data.mri_data import RealCESTData
 import matplotlib.pyplot as plt
@@ -15,6 +16,30 @@ from tqdm import trange
 def zero_one_norm(data):
     return (data - data.min()) / (data.max() - data.min())
 
+class Model:
+    def __init__(self):
+        self.model = VarNetModule(
+            num_cascades=6,
+            pools=3,
+            chans=8,
+            sens_pools=3,
+            sens_chans=8,
+            lr=0.001,
+            lr_step_size=10000,
+            lr_gamma=1,
+            weight_decay=0,
+            volume_training=True,
+            mask_center=False,
+            accelerations=6,
+            loss="combined_loss_offsets",
+        )
+        self.model = self.model.load_from_checkpoint(r"C:\Users\follels\Documents\fastMRI\logs\varnet\varnet_demo\checkpoints\fastmri_checkpoint_35732.ckpt")
+        self.model = self.model.to("cuda")
+        
+    def predict(self, masked_kspace, mask):
+        pred = self.model.forward(masked_kspace, mask, 0)
+        return pred
+
 class Dataset:
     def __init__(self):
         self.dataset = None
@@ -24,7 +49,7 @@ class Dataset:
         mask = create_mask_for_mask_type("poisson_3d", [0], [6])
         transform = VarNetDataTransformVolume4D(mask_func=mask, use_seed=True)
         cest_ds = RealCESTData(r"E:\Lukas\cest_data\Probanden\Mareike\output\multicoil_train", "multicoil", transform=transform, use_dataset_cache=False,
-                                cache_path=r"C:\Users\follels\Documents\fastMRI\cache\cache_val", number_of_simultaneous_offsets=16)
+                                cache_path=r"C:\Users\follels\Documents\fastMRI\cache\cache_val", number_of_simultaneous_offsets=8)
         self.dataset = cest_ds
     
     def get(self, i):
@@ -33,6 +58,7 @@ class Dataset:
 
 def main():
     ds = Dataset()
+    model = Model()
     item = ds.get(0)
     
     masked_kspace = item.masked_kspace_no_imputation[..., 0] + 1j * item.masked_kspace_no_imputation[..., 1]
@@ -53,6 +79,10 @@ def main():
     volume = fastmri.rss(volume, dim=0)
     volume = volume[..., 64:192]
     volume = volume.numpy()
+    
+    # Model reco
+    prediction = model.predict(item.masked_kspace[None], item.mask[None])
+    prediction = prediction.numpy()
     
     # CS reco
     # Do this in Matlab

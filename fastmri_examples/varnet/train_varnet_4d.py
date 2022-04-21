@@ -158,9 +158,9 @@ def build_args():
     parser = VarNetModule.add_model_specific_args(parser)
     parser.set_defaults(
         num_cascades=6,  # number of unrolled iterations
-        pools=2,  # number of pooling layers for U-Net
+        pools=3,  # number of pooling layers for U-Net
         chans=8,  # number of top-level channels for U-Net
-        sens_pools=2,  # number of pooling layers for sense est. U-Net
+        sens_pools=3,  # number of pooling layers for sense est. U-Net
         sens_chans=8,  # number of top-level channels for sense est. U-Net
         lr=0.001,  # Adam learning rate
         lr_step_size=100000,  # epoch at which to decrease learning rate
