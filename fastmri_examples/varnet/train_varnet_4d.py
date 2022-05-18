@@ -16,7 +16,7 @@ sys.path.insert(0, path)
 import pytorch_lightning as pl
 from fastmri.data.mri_data import fetch_dir
 from fastmri.data.subsample import create_mask_for_mask_type
-from fastmri.data.transforms import VarNetDataTransformVolume4D
+from fastmri.data.transforms import VarNetDataTransformVolume4D, VarNetDataTransformVolume4DGrappa
 from fastmri.pl_modules import FastMriDataModule, VarNetModule
 
 
@@ -28,7 +28,6 @@ def cli_main(args):
     # ------------
     # this creates a k-space mask for transforming input data
     mask = create_mask_for_mask_type("poisson_3d", args.center_fractions, args.accelerations)
-    # use random masks for train transform, fixed masks for val transform
     train_transform = VarNetDataTransformVolume4D(mask_func=mask, use_seed=False)
     val_transform = VarNetDataTransformVolume4D(mask_func=mask)
     test_transform = VarNetDataTransformVolume4D()
@@ -208,8 +207,8 @@ def build_args():
         if ckpt_list:
             args.resume_from_checkpoint = str(ckpt_list[-1])
     # args.resume_from_checkpoint = r"C:\Users\follels\Documents\fastMRI\logs\varnet\varnet_demo\checkpoints\fastmri_checkpoint_35732.ckpt"
-    print("Not resuming from checkpoint!")
-    args.resume_from_checkpoint = None
+    # print("Not resuming from checkpoint!")
+    # args.resume_from_checkpoint = None
 
     return args
 
@@ -268,4 +267,46 @@ if __name__ == "__main__":
 # Run 91: US 26, Model 6 12 8 2 8, 4 offsets 
 # Run 92: US 26, Model 6 16 8 2 8 (6.2M), 4 offsets
 
-# TODO: Optimize 1 offset 3D model for optimal performance with varying number of channels
+# Run 98: replicate Run 84
+# Run 99: GRAPPA Init
+
+# Run 105: Grappa init and hamming window layer last
+# Run 106: GRAPPA init with alternating masks over offsets
+# Run 107: GRAPPA init alternating, R=9 (3x3), removes some artifacts
+# Run 108: GRAPPA init alternating, R=9 (3x3), Hamming parametrized as last layer
+# Run 109: GRAPPA init alternating, R=9 (3x3), No VarNet, only Hamming parametrized as last layer
+# Run 110: Pure VarNet, Poisson undersampling factor 8.6
+# Run 111 Try Grappa init for poisson undersampling -> Error: Singular matrix
+
+# Run 112: GRAPPA init alternating, R=16 (4x4)
+# Run 113: No Grappa, imputed kspace as input to sens network, masked kspace input to cascades
+# Grappa baseline not comparable so far due to using center kspace for all offsets individually, now switched to first offset.
+# -> But doesnt change much ...
+# Run 114: Grappa Init, 3x3, only first offset as acs 
+# Previous grappa results were wrong since center of kspace was kept instead of acs region.
+
+# Run 115 masked_kspace input, Corrected Grappa baseline, acs input to sensmodel, 3x3 
+# Run 116 masked_kspace input, Corrected Grappa baseline, acs input to sensmodel, 3x3, ssim + mse
+# Run 117 filled_kspace input, acs to SenseNet, ssim + mse 
+# Run 118 filled_kspace input, acs to SenseNet, ssim (**Better than GRAPPA, NRMSE - 1, SSIM + 1.4, PSNR + 0.8**)
+# Run 119 filled_kspace input, acs to SenseNet, ssim, reduces lr to 0.0001
+
+# Run 120 GRAPPA Init, Esprit sens instead of SensNet, 0.0001 lr (6.2M)
+# Run 121 No Init, Esprit sens instead of SensNet
+# Run 122 Kspace imputation, Esprit sens instead of SensNet
+
+# Run 123 GRAPPA Init, ACS to SenseNet, Denser center sampling (x8)
+# Run 124 Like 123, w/ hamming window parametrized (HWP)
+# Run 126 Like 123, w/ hamming window parametrized (prev cascade) (**Best so far** SSIM +3%, PSNR +0.1%, NRMSE +1%)
+# Run 127 Like 123, w/ hamming window parametrized (prev cascade), mse
+# Run 128 Continue 126
+
+# Run 129: No HWP, added U-Net after to_image_space_transform
+# Run 130: No HWP, added U-Net after to_image_space_transform, mse
+# Run 131: VarNet3D1D, no image_space_net, 3.1M
+
+# Run 132: VarNet3D1D, poisson sampling
+# Run 133: Continue 132 /w mae loss
+
+# TODO: Switch to poisson sampling /wo grappa init, save 100 us patterns -> load during training
+

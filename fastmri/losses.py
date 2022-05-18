@@ -244,8 +244,8 @@ def combined_loss(img1, img2):
 
 
 def combined_loss_offsets(img1, img2):
-    # mse_loss = F.l1_loss(img1, img2)
+    mse_loss = F.l1_loss(img1, img2)
     # mse_loss = F.mse_loss(img1, img2)
     # tv = total_variation(img1)
-    ssim_loss = sum([ssim3D_loss(img1[:, offset].unsqueeze(0), img2[:, offset].unsqueeze(0)) for offset in range(img1.shape[1])]) / img1.shape[1]
-    return ssim_loss  # 0.9 * ssim_loss + 0.1 * mse_loss
+    # ssim_loss = sum([ssim3D_loss(img1[:, offset].unsqueeze(0), img2[:, offset].unsqueeze(0)) for offset in range(img1.shape[1])]) / img1.shape[1]
+    return mse_loss  # ssim_loss  # 0.9 * ssim_loss + 0.1 * mse_loss

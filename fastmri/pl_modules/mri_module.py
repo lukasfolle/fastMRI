@@ -125,6 +125,8 @@ class MriModule(pl.LightningModule):
                 key = f"val_images_idx_{batch_idx}"
                 target = val_logs["target"][i].unsqueeze(0)
                 output = val_logs["output"][i].unsqueeze(0)
+                # hamming_window = val_logs["hamming_window"][10].unsqueeze(0)
+                # hamming_window = (hamming_window - hamming_window.min()) / (hamming_window.max() - hamming_window.min())
                 error = torch.abs(target - output)
                 output = (output - output.min()) / (output.max() - output.min() + 1e-10)
                 target = (target - target.min()) / (target.max() - target.min() + 1e-10)
@@ -134,12 +136,13 @@ class MriModule(pl.LightningModule):
                 self.log_image(f"{key}/target", target[:, target.shape[1] // 2, ...])
                 self.log_image(f"{key}/reconstruction", output[:, 0, output.shape[2] // 2, ...])
                 self.log_image(f"{key}/error", error[:, 0, error.shape[2] // 2, ...])
-                self.log_image(f"{key}/default_reco", default_reco[default_reco.shape[0] // 2][None])
+                # self.log_image(f"{key}/default_reco", default_reco[default_reco.shape[0] // 2][None])
+                # self.log_image(f"{key}/hamming_window_central", hamming_window)
                 if "mask" in val_logs.keys():
                     mask = val_logs["mask"][i]
                     mask = mask / mask.max()
-                    mask = mask.squeeze()[0, ..., 0]
-                    self.log_image(f"{key}/mask", mask[None])
+                    mask = mask.squeeze()[..., 0]
+                    self.log_image(f"{key}/mask", mask[None, 0])
 
             return {
                 "val_loss": val_logs["val_loss"],

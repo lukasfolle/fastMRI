@@ -18,6 +18,7 @@ from fastmri.data import transforms
 from fastmri.models.unet_4d import Unet4D
 from fastmri.models.unet_4d import ConvBlock
 from fastmri.models.convnd import Conv4d
+from fastmri_examples.cs.hamming import HammingWindowNetwork, HammingWindowParametrized
 
 
 class NormUnet(nn.Module):
@@ -213,6 +214,7 @@ class SensitivityModel(nn.Module):
         num_low_frequencies: Optional[int] = None,
     ) -> torch.Tensor:
         if self.mask_center:
+            print("Masking center of kspace")
             pad, num_low_freqs = self.get_pad_and_num_low_freqs(
                 mask, num_low_frequencies
             )
@@ -243,7 +245,7 @@ class VarNet4D(nn.Module):
         sens_pools: int = 4,
         chans: int = 18,
         pools: int = 4,
-        mask_center: bool = True,
+        mask_center: bool = False,
     ):
         """
         Args:
@@ -268,20 +270,31 @@ class VarNet4D(nn.Module):
         self.cascades = nn.ModuleList(
             [VarNetBlock(NormUnet(chans, pools)) for _ in range(num_cascades)]
         )
+        self.image_space_net = NormUnet(1, 3)
+        # self.hamming_window = HammingWindowParametrized()
 
     def forward(
         self,
         masked_kspace: torch.Tensor,
+        acs: torch.Tensor,
         mask: torch.Tensor,
         num_low_frequencies: Optional[int] = None,
     ) -> torch.Tensor:
-        sens_maps = self.sens_net(masked_kspace, mask, num_low_frequencies)
-        # sens_maps = torch.ones_like(masked_kspace)
+        sens_maps = self.sens_net(acs, mask, num_low_frequencies)  # Uses center k-space lines for estimation, feed ACS in case of GRAPPA
         kspace_pred = masked_kspace.clone()
 
-        for cascade in self.cascades:
+        for i, cascade in enumerate(self.cascades):
             kspace_pred = cascade(kspace_pred, masked_kspace, mask, sens_maps)
-        return fastmri.rss(fastmri.complex_abs(fastmri.ifft3c(kspace_pred)), dim=1)
+            # if i == len(self.cascades) - 2:
+            #     kspace_pred = self.hamming_window(kspace_pred)
+        
+        image_space = fastmri.rss(fastmri.complex_abs(fastmri.ifft3c(kspace_pred)), dim=1)
+        image_space = torch.stack((image_space, image_space), -1)
+        image_space = self.image_space_net(image_space.unsqueeze(0))
+        image_space = image_space[0, ..., 0]
+        return image_space
+        
+        # return fastmri.rss(fastmri.complex_abs(fastmri.ifft3c(kspace_pred)), dim=1)
 
 
 class VarNetBlock(nn.Module):
@@ -329,10 +342,10 @@ class VarNetBlock(nn.Module):
 
 
 if __name__ == "__main__":
-    vn = VarNet4D(4, 2, 4, 2, 3).cuda()
+    vn = VarNet4D(4, 2, 3, 2, 3).cuda()
     # Batch Channel Offsets Depth Height Width
     for _ in range(3):
-        ret = vn(torch.rand((1, 15, 8, 8, 320, 180, 2)).cuda(), torch.rand((1, 15, 8, 8, 320, 180, 2)).cuda() > 0.5)
+        ret = vn(torch.rand((1, 15, 8, 20, 128, 256, 2)).cuda(), torch.rand((1, 15, 8, 20, 128, 256, 2)).cuda(), torch.rand((1, 15, 8, 20, 128, 256, 2)).cuda() > 0.5)
         if torch.isnan(ret).any():
             raise Exception()
         print(ret.max())

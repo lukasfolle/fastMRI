@@ -105,7 +105,8 @@ class Unet4D(nn.Module):
             if output.shape[-3] != downsample_layer.shape[-3]:
                 padding[5] = 1  # padding bottom
             if torch.sum(torch.tensor(padding)) != 0:
-                output = F.pad(output, padding, "reflect")
+                # output = F.pad(output, padding, "reflect")
+                output = F.pad(output, padding, "constant")
 
             output = torch.cat([output, downsample_layer], dim=1)
             output = conv(output)

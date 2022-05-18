@@ -11,7 +11,7 @@ import fastmri
 import torch
 import torch.nn.functional as F
 from fastmri.data import transforms
-from fastmri.models import VarNet, VarNet3D, VarNet4D
+from fastmri.models import VarNet, VarNet3D, VarNet4D, VarNet3D1D
 from fastmri.losses import combined_loss, ssim3D_loss, combined_loss_offsets
 import nibabel as nib
 import numpy as np
@@ -93,7 +93,8 @@ class VarNetModule(MriModule):
         self.mask_center = mask_center
 
         if volume_training:
-            self.varnet = VarNet4D(
+            print("Using VarNet3D1D")
+            self.varnet = VarNet3D1D(
                 num_cascades=self.num_cascades,
                 sens_chans=self.sens_chans,
                 sens_pools=self.sens_pools,
@@ -121,12 +122,14 @@ class VarNetModule(MriModule):
         else:
             self.loss = fastmri.SSIMLoss()
 
-    def forward(self, masked_kspace, mask, num_low_frequencies):
-        return self.varnet(masked_kspace, mask, num_low_frequencies)
+    def forward(self, masked_kspace, acs, mask, num_low_frequencies):
+        return self.varnet(masked_kspace, acs, mask, num_low_frequencies)
 
     def training_step(self, batch, batch_idx):
         batch = batch[0]
-        output = self(batch.masked_kspace[None], batch.mask[None], batch.num_low_frequencies)
+        kspace, acs, mask = batch.masked_kspace[None], batch.acs[None], batch.mask[None]
+        acs = torch.stack([acs for _ in range(8)], 2)
+        output = self(kspace, acs, mask, batch.num_low_frequencies)
 
         target, output = transforms.center_crop_to_smallest(batch.target, output)
         loss = self.loss(
@@ -138,17 +141,18 @@ class VarNetModule(MriModule):
 
     def validation_step(self, batch, batch_idx):
         batch = batch[0]
-        output = self.forward(
-            batch.masked_kspace[None], batch.mask[None], batch.num_low_frequencies
-        )
+        kspace, acs, mask = batch.masked_kspace[None], batch.acs[None], batch.mask[None]
+        acs = torch.stack([acs for _ in range(8)], 2)
+        output = self(kspace, acs, mask, batch.num_low_frequencies)
+        
         target, output = transforms.center_crop_to_smallest(batch.target, output)
         loss = self.loss(
             output, target.unsqueeze(0),
         )
         self.log("validation_loss", loss)
-        if self.current_epoch % 10 == 0:
-            self.log_zero_filling_metrics(batch.masked_kspace_no_imputation[None], batch.target[None])
-            self.save_predictions_to_nifti(output, target, batch.masked_kspace_no_imputation, batch_idx)
+        # if self.current_epoch % 10 == 0:
+            # self.log_zero_filling_metrics(batch.filled_kspace[None], batch.target[None])
+            # self.save_predictions_to_nifti(output, target, batch.filled_kspace, batch_idx)
             
         return {
             "batch_idx": batch_idx,
@@ -159,7 +163,8 @@ class VarNetModule(MriModule):
             "mask": batch.mask,
             "target": target,
             "masked_kspace": batch.masked_kspace[None],
-            "val_loss": loss
+            "val_loss": loss,
+            # "hamming_window": self.varnet.hamming_window.hamming_window_layer.weight.detach().cpu(),
         }
 
     def test_step(self, batch, batch_idx):
@@ -206,15 +211,15 @@ class VarNetModule(MriModule):
         self.log("val_metrics/psnr_zfil", metrics["psnr"])
         self.log("val_metrics/ssim_zfil", metrics["ssim"])
 
-    def save_predictions_to_nifti(self, output, target, masked_kspace_no_imputation, batch_idx):
+    def save_predictions_to_nifti(self, output, target, masked_kspace, batch_idx):
         affine_matrix = np.array([[4, 0, 0, 0], [0, 1.203, 0, 0], [0, 0, 1.203, 0], [0, 0, 0, 1]])
         reco_nii = nib.Nifti1Image(np.flip(output.cpu().numpy().squeeze().transpose((1, 2, 3, 0)), 2), affine=affine_matrix)
         nib.save(reco_nii, os.path.join(r"E:\Lukas\cest_data\Probanden\Mareike\prediction", f"val_prediction_{batch_idx}_epoch_{self.current_epoch}.nii.gz"))
         reco_nii = nib.Nifti1Image(np.flip(target.cpu().numpy().squeeze().transpose((1, 2, 3, 0)), 2), affine=affine_matrix)
         nib.save(reco_nii, os.path.join(r"E:\Lukas\cest_data\Probanden\Mareike\prediction", f"val_target_{batch_idx}_epoch_{self.current_epoch}.nii.gz"))
         default_reco = []
-        for offset in range(masked_kspace_no_imputation.shape[1]):
-            k_space_downsampled = masked_kspace_no_imputation[:, offset].squeeze()
+        for offset in range(masked_kspace.shape[1]):
+            k_space_downsampled = masked_kspace[:, offset].squeeze()
             k_space_downsampled = torch.view_as_real(k_space_downsampled[..., 0] + 1j * k_space_downsampled[..., 1])
             volume = fastmri.ifft3c(k_space_downsampled)
             volume = fastmri.complex_abs(volume)

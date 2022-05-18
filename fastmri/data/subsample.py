@@ -444,7 +444,8 @@ class EquispacedMaskFractionFunc(MaskFunc):
 class EquispacedMaskFractionFunc3D(MaskFunc3D):
     def __init__(self, center_fractions, accelerations, allow_any_combination=False, seed=None):
         super().__init__(center_fractions, accelerations, allow_any_combination, seed)
-        self.eliptical_mask = np.load(os.path.join(os.path.dirname(__file__), "kspace_eliptical_mask.npy")).astype(float)
+        # self.eliptical_mask = np.load(os.path.join(os.path.dirname(__file__), "kspace_eliptical_mask.npy")).astype(float)
+        self.offset_mask = 0
 
     def calculate_acceleration_mask_3D(
         self,
@@ -452,7 +453,8 @@ class EquispacedMaskFractionFunc3D(MaskFunc3D):
         acceleration: int,
         offset: Optional[int],
         num_low_frequencies: int,
-        shape
+        shape,
+        seed
     ) -> np.ndarray:
         """
         Produce mask for non-central acceleration lines.
@@ -468,13 +470,68 @@ class EquispacedMaskFractionFunc3D(MaskFunc3D):
         Returns:
             A mask for the high spatial frequencies of k-space.
         """
-        eliptial_mask = resize(self.eliptical_mask, output_shape=(shape[-3], shape[-2]), order=1) > 0.5
-
+        if self.offset_mask > 3:
+            self.offset_mask = 0
         mask = np.zeros((shape[-3], shape[-2]))
-        mask_offset = 0  # self.rng.randint(0, 2)
-        phase_offset = 0  # self.rng.randint(0, 3)
-        mask[mask_offset::2, phase_offset::3] = 1.0
-        mask = mask * eliptial_mask
+        mask_offset = self.offset_mask % 2
+        phase_offset = self.offset_mask // 2
+        mask[mask_offset::3, phase_offset::3] = 1.0        
+        self.offset_mask += 1
+        return mask
+
+class EquispacedMaskFractionFunc3D(MaskFunc3D):
+    def __init__(self, center_fractions, accelerations, allow_any_combination=False, seed=None):
+        super().__init__(center_fractions, accelerations, allow_any_combination, seed)
+        # self.eliptical_mask = np.load(os.path.join(os.path.dirname(__file__), "kspace_eliptical_mask.npy")).astype(float)
+        self.offset_mask = 0
+
+    def calculate_acceleration_mask_3D(
+        self,
+        num_cols: int,
+        acceleration: int,
+        offset: Optional[int],
+        num_low_frequencies: int,
+        shape,
+        seed
+    ) -> np.ndarray:
+        """
+        Produce mask for non-central acceleration lines.
+
+        Args:
+            num_cols: Number of columns of k-space (2D subsampling).
+            acceleration: Desired acceleration rate.
+            offset: Offset from 0 to begin masking. If no offset is specified,
+                then one is selected randomly.
+            num_low_frequencies: Number of low frequencies. Used to adjust mask
+                to exactly match the target acceleration.
+
+        Returns:
+            A mask for the high spatial frequencies of k-space.
+        """
+        if self.offset_mask > 3:
+            self.offset_mask = 0
+        mask = np.zeros((shape[-3], shape[-2]))
+        mask_offset = self.offset_mask % 2
+        phase_offset = self.offset_mask // 2
+        mask[mask_offset::3, phase_offset::3] = 1.0        
+        self.offset_mask += 1
+        return mask
+
+
+class EquispacedMaskFractionFuncCenterDense3D(MaskFunc3D):
+    def calculate_acceleration_mask_3D(
+        self,
+        num_cols: int,
+        acceleration: int,
+        offset: Optional[int],
+        num_low_frequencies: int,
+        shape,
+        seed
+    ) -> np.ndarray:
+        mask_offset = phase_offset = 0
+        mask = np.zeros((shape[-3], shape[-2]))
+        mask[mask_offset::4, phase_offset::4] = 1.0
+        mask[5:15:2, 32:-32:2] = 1
         return mask
 
 
@@ -519,13 +576,16 @@ class VariableDensitiyMask3D(MaskFunc3D):
 
 
 class PoissonDensitiyMask3D(MaskFunc3D):
-    def __init__(self, accelerations, allow_any_combination=False, seed=None):
+    def __init__(self, accelerations, allow_any_combination=False, seed=None, cached=True):
         super().__init__([0], accelerations, allow_any_combination, seed)
         self.rng_new = np.random.default_rng(seed)
         self.poisson_radius = 0.0125
         self.rng_new = np.random.default_rng(seed)
+        self.cached = cached
+        if cached:
+            self.poisson_masks = np.load(r"C:\Users\follels\Documents\fastMRI\cache\poisson_disc_masks\masks.npy")
 
-    def calculate_acceleration_mask_3D(
+    def poisson_disc_calculation(
         self,
         num_cols: int,
         acceleration: int,
@@ -538,19 +598,37 @@ class PoissonDensitiyMask3D(MaskFunc3D):
         self.rng_new = np.random.default_rng(seed)
         inner_shape = ((shape[1] // 2) & ~1, (shape[2] // 2) & ~1)
         accu_inner = np.zeros((inner_shape[0], inner_shape[1]), dtype=np.int32)
-        PS = PoissonSampler(inner_shape[0], inner_shape[1], 2, 2, 42, 0, 0.7)
+        PS = PoissonSampler(inner_shape[0], inner_shape[1], 5, 2, 42, 0, 0.7)
         mask_inner = PS.generate(self.rng_new, accu_inner)
 
         outer_shape = (shape[1] & ~1, shape[2] & ~1)
         accu_outer = np.zeros((outer_shape[0], outer_shape[1]), dtype=np.int32)
-        PS = PoissonSampler(outer_shape[0], outer_shape[1], 6, 4, 42, 0, 0.7)
+        PS = PoissonSampler(outer_shape[0], outer_shape[1], 8, 4, 42, 0, 0.7)
         mask_combined = PS.generate(self.rng_new, accu_outer)
         mask_combined[mask_combined.shape[0] // 2 - inner_shape[0] // 2:mask_combined.shape[0] // 2 + inner_shape[0] // 2,
                       mask_combined.shape[1] // 2 - inner_shape[1] // 2:mask_combined.shape[1] // 2 + inner_shape[1] // 2] = mask_inner
         # For uneven shapes
         final_mask = np.zeros(shape[1:-1])
         final_mask[0:mask_combined.shape[0], 0:mask_combined.shape[1]] = mask_combined
-        return final_mask[None]
+        return final_mask
+
+    def calculate_acceleration_mask_3D(
+        self,
+        num_cols: int,
+        acceleration: int,
+        offset: Optional[int],
+        num_low_frequencies: int,
+        shape,
+        seed,
+    ) -> np.ndarray:
+        if self.cached:
+            self.rng_new = np.random.default_rng(seed)
+            case_idx = self.rng_new.integers(0, 100)
+            mask = self.poisson_masks[case_idx]
+        else:
+            mask = self.poisson_disc_calculation(num_cols, acceleration, offset, num_low_frequencies, shape, seed)
+        return mask
+            
 
 
 class CartesianOffsetMask3D(MaskFunc3D):
@@ -734,6 +812,8 @@ def create_mask_for_mask_type(
         return EquispacedMaskFractionFunc(center_fractions, accelerations)
     elif mask_type_str == "equispaced_fraction_3d":
         return EquispacedMaskFractionFunc3D(center_fractions, accelerations)
+    elif mask_type_str == "equispaced_fraction_dense_center_3d":
+        return EquispacedMaskFractionFuncCenterDense3D(center_fractions, accelerations)    
     elif mask_type_str == "magic":
         return MagicMaskFunc(center_fractions, accelerations)
     elif mask_type_str == "magic_fraction":
@@ -751,7 +831,12 @@ def create_mask_for_mask_type(
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
     import numpy as np
+    from tqdm import tqdm
     vdm = PoissonDensitiyMask3D([6])
+    # masks = []
+    # for _ in tqdm(range(800)):
+    #     masks.append(vdm([1, 20, 128, 1]))
+    # masks = masks
     mask = vdm([1, 20, 128, 1])
     print(f"Acceleration: {mask[0].numel() / mask[0].sum()}")
     plt.imshow(mask[0].squeeze())

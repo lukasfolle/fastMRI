@@ -10,3 +10,4 @@ from .unet_3d import Unet3D
 from .varnet import NormUnet, SensitivityModel, VarNet, VarNetBlock
 from .varnet_3d import VarNet3D
 from .varnet_4d import VarNet4D
+from .varnet_3_1d import VarNet3D1D

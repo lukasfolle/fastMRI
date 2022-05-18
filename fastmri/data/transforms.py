@@ -6,11 +6,15 @@ LICENSE file in the root directory of this source tree.
 """
 
 from typing import Dict, NamedTuple, Optional, Sequence, Tuple, Union
+import time
 
 import fastmri
 import numpy as np
 import torch
+import torch.nn.functional as F
 from copy import deepcopy
+from pygrappa.mdgrappa import mdgrappa
+
 
 from .subsample import MaskFunc
 
@@ -434,7 +438,9 @@ class VarNetSample(NamedTuple):
     slice_num: int
     max_value: float
     crop_size: Tuple[int, int]
-    masked_kspace_no_imputation: Optional[torch.Tensor]
+    masked_kspace_imputed: Optional[torch.Tensor]
+    filled_kspace: Optional[torch.Tensor]
+    acs: Optional[torch.Tensor]
 
 
 class VarNetDataTransform:
@@ -641,28 +647,38 @@ class VarNetDataTransformVolume4D(VarNetDataTransform):
     ) -> Tuple[torch.Tensor, torch.Tensor, int]:
         if self.cached_mask is None:
             shape = (1, data.shape[-4], data.shape[-3], data.shape[-1])
-            masks = torch.zeros((data.shape[1], *shape)).squeeze()
-            num_low_frequencies = None
-            for offset in range(data.shape[1]):
-                if seed is None:
-                    seed_offset = None
-                else:
-                    seed_offset = (offset, *seed)
-                mask, num_low_frequencies = mask_func(shape, offset, seed_offset)
-                mask = torch.stack((mask, mask), -1)
-                masks[offset] = mask.squeeze()
-            self.cached_mask = masks
-            # masks, num_low_frequencies = mask_func(shape, offset)
-            # masks = torch.stack((masks, masks), -1)
-            # self.cached_mask = masks
-            # num_low_frequencies = 0
+        #     masks = torch.zeros((data.shape[1], *shape)).squeeze()
+        #     num_low_frequencies = None
+        #     for offset in range(data.shape[1]):
+        #         if seed is None:
+        #             seed_offset = None
+        #         else:
+        #             seed_offset = (offset, *seed)
+        #         mask, num_low_frequencies = mask_func(shape, offset, seed_offset)
+        #         mask = torch.stack((mask, mask), -1)
+        #         masks[offset] = mask.squeeze()
+        #     self.cached_mask = masks
+        #     masks, num_low_frequencies = mask_func(shape, offset)
+        #     masks = torch.stack((masks, masks), -1)
+        #     self.cached_mask = masks
+        #     num_low_frequencies = 0
+        # else:
+        #     masks = self.cached_mask
+        #     num_low_frequencies = 0
+        if seed is None:
+            seed_offset = None
         else:
-            masks = self.cached_mask
-            num_low_frequencies = 0
+            seed_offset = seed
+        masks, num_low_frequencies = mask_func(shape, offset, None, seed=seed_offset)
+        masks = torch.stack((masks, masks), -1)
         masks = masks.unsqueeze(0).unsqueeze(-2)
         masked_data = data * masks + 0.0  # the + 0.0 removes the sign of the zeros
+        acs_mask = torch.zeros(data.shape)
+        acs_mask[:, :, :, 64 - 12:64 + 12] = 1
+        acs = data * acs_mask + 0.0
+        acs = acs[:, 0]
 
-        return masked_data, masks, num_low_frequencies
+        return masked_data, acs, masks, num_low_frequencies
 
     def impute_missing_kspace_over_offsets(self, kspace):
         filled_kspace = deepcopy(kspace)
@@ -696,22 +712,23 @@ class VarNetDataTransformVolume4D(VarNetDataTransform):
         crop_size = (attrs["recon_size"][0], attrs["recon_size"][1])
 
         if self.mask_func is not None:
-            masked_kspace, mask_torch, num_low_frequencies = self.apply_mask(
+            masked_kspace, acs, mask_torch, num_low_frequencies = self.apply_mask(
                 kspace_torch, self.mask_func, seed=seed, padding=(acq_start, acq_end)
             )
-            masked_kspace_no_imputation = deepcopy(masked_kspace)
-            masked_kspace = self.impute_missing_kspace_over_offsets(masked_kspace)
+            masked_kspace_imputed = self.impute_missing_kspace_over_offsets(deepcopy(masked_kspace))
 
             sample = VarNetSample(
                 masked_kspace=masked_kspace,
                 mask=mask_torch.to(torch.bool),
+                filled_kspace=None,
+                acs=acs,
                 num_low_frequencies=num_low_frequencies,
                 target=target_torch,
                 fname=fname,
                 slice_num=slice_num,
                 max_value=max_value,
                 crop_size=crop_size,
-                masked_kspace_no_imputation=masked_kspace_no_imputation
+                masked_kspace_imputed=masked_kspace_imputed,
             )
         else:
             masked_kspace = kspace_torch
@@ -737,3 +754,38 @@ class VarNetDataTransformVolume4D(VarNetDataTransform):
             )
 
         return sample
+
+class VarNetDataTransformVolume4DGrappa(VarNetDataTransformVolume4D):    
+    def apply_mask(self,
+                   data: torch.Tensor,
+                   mask_func: MaskFunc,
+                   offset: Optional[int] = None,
+                   seed: Optional[Union[int, Tuple[int, ...]]] = None,
+                   padding: Optional[Sequence[int]] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor, int]:
+        shape = (1, data.shape[-4], data.shape[-3], data.shape[-1])
+        masks, num_low_frequencies = mask_func(shape, offset)
+        masks_w_center = deepcopy(masks)
+        masks_w_center[:, shape[-2] // 2 - 12:shape[-2] // 2 + 12] = 1
+        masks_w_center = torch.stack((masks_w_center, masks_w_center), -1)
+        masks = torch.stack((masks, masks), -1)
+        masks_w_center = masks_w_center.unsqueeze(0).unsqueeze(-2)
+        masks = masks.unsqueeze(0).unsqueeze(-2)
+        masked_data = data * masks + 0.0
+        masked_data_w_acs = data * masks_w_center + 0.0
+
+        filled_kspace = deepcopy(masked_data)
+        weights = None
+        acs = masked_data_w_acs[:, 0, :, filled_kspace.shape[3] // 2 - 12:filled_kspace.shape[3] // 2 + 12]  # First offset as acs
+        acs = (acs[..., 0] + 1j * acs[..., 1]).numpy().squeeze()
+        before = time.time()
+        for offset in range(filled_kspace.shape[1]):
+            kspace = (filled_kspace[:, offset, ..., 0].numpy() + 1j * filled_kspace[:, offset, ..., 1].numpy())
+            kspace_est, weights = mdgrappa(kspace, acs, coil_axis=0, ret_weights=True, weights=weights)
+            filled_kspace[:, offset] = torch.stack((torch.real(torch.from_numpy(kspace_est)), torch.imag(torch.from_numpy(kspace_est))), -1)
+        after = time.time()
+        print(f"GRAPPA took {(after - before) / 60:.2f} minutes to complete.")
+        acs = torch.from_numpy(acs).squeeze()      
+        return filled_kspace, masked_data, acs, masks, num_low_frequencies
+
+

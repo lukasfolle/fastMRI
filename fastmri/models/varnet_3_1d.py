@@ -15,11 +15,15 @@ import torch.nn.functional as F
 from torch.utils.checkpoint import checkpoint
 from fastmri.data import transforms
 
-from fastmri.models.unet_4d import Unet4D
-from fastmri.models.unet_3d import Unet3D
+from fastmri.models.unet_3d_1d import Unet3D1D
+from fastmri.models.unet_1d import Unet1D
+from fastmri.models.wnet import WNet
+from fastmri.models.unet_3d_1d import ConvBlock
+from torch.nn import Conv3d
+from fastmri_examples.cs.hamming import HammingWindowNetwork, HammingWindowParametrized
 
 
-class NormUnet3D(nn.Module):
+class NormUnet(nn.Module):
     """
     Normalized U-Net model.
 
@@ -46,119 +50,7 @@ class NormUnet3D(nn.Module):
         """
         super().__init__()
 
-        self.unet = Unet3D(
-            in_chans=in_chans,
-            out_chans=out_chans,
-            chans=chans,
-            num_pool_layers=num_pools,
-            drop_prob=drop_prob,
-        )
-
-    def complex_to_chan_dim(self, x: torch.Tensor) -> torch.Tensor:
-        b, c, d, h, w, two = x.shape
-        assert two == 2
-        return x.permute(0, 5, 1, 2, 3, 4).reshape(b, 2 * c, d, h, w)
-
-    def chan_complex_to_last_dim(self, x: torch.Tensor) -> torch.Tensor:
-        b, c2, d, h, w = x.shape
-        assert c2 % 2 == 0
-        c = c2 // 2
-        return x.view(b, 2, c, d, h, w).permute(0, 2, 3, 4, 5, 1).contiguous()
-
-    def norm(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        # group norm
-        b, c, d, h, w = x.shape
-        x = x.view(b, 2, c // 2 * d * h * w)
-
-        mean = x.mean(dim=2).view(b, 2, 1, 1, 1)
-        std = x.std(dim=2).view(b, 2, 1, 1, 1)
-
-        x = x.view(b, c, d, h, w)
-
-        return (x - mean) / std, mean, std
-
-    def unnorm(
-        self, x: torch.Tensor, mean: torch.Tensor, std: torch.Tensor
-    ) -> torch.Tensor:
-        return x * std + mean
-
-    def pad(
-        self, x: torch.Tensor
-    ) -> Tuple[torch.Tensor, Tuple[List[int], List[int], List[int], int, int, int]]:
-        _, _, d, h, w = x.shape
-        w_mult = ((w - 1) | 15) + 1
-        h_mult = ((h - 1) | 15) + 1
-        d_mult = ((d - 1) | 15) + 1
-        w_pad = [math.floor((w_mult - w) / 2), math.ceil((w_mult - w) / 2)]
-        h_pad = [math.floor((h_mult - h) / 2), math.ceil((h_mult - h) / 2)]
-        d_pad = [math.floor((d_mult - d) / 2), math.ceil((d_mult - d) / 2)]
-        # TODO: fix this type when PyTorch fixes theirs
-        # the documentation lies - this actually takes a list
-        # https://github.com/pytorch/pytorch/blob/master/torch/nn/functional.py#L3457
-        # https://github.com/pytorch/pytorch/pull/16949
-        x = F.pad(x, w_pad + h_pad + d_pad)
-
-        return x, (d_pad, h_pad, w_pad, d_mult, h_mult, w_mult)
-
-    def unpad(
-        self,
-        x: torch.Tensor,
-        d_pad: List[int],
-        h_pad: List[int],
-        w_pad: List[int],
-        d_mult: int,
-        h_mult: int,
-        w_mult: int,
-    ) -> torch.Tensor:
-        return x[..., d_pad[0] : d_mult - d_pad[1], h_pad[0] : h_mult - h_pad[1], w_pad[0] : w_mult - w_pad[1]]
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if not x.shape[-1] == 2:
-            raise ValueError("Last dimension must be 2 for complex.")
-
-        # get shapes for unet and normalize
-        x = self.complex_to_chan_dim(x)
-        x, mean, std = self.norm(x)
-        x, pad_sizes = self.pad(x)
-
-        x = self.unet(x)
-
-        # get shapes back and unnormalize
-        x = self.unpad(x, *pad_sizes)
-        x = self.unnorm(x, mean, std)
-        x = self.chan_complex_to_last_dim(x)
-
-        return x
-    
-
-class NormUnet4D(nn.Module):
-    """
-    Normalized U-Net model.
-
-    This is the same as a regular U-Net, but with normalization applied to the
-    input before the U-Net. This keeps the values more numerically stable
-    during training.
-    """
-
-    def __init__(
-        self,
-        chans: int,
-        num_pools: int,
-        in_chans: int = 2,
-        out_chans: int = 2,
-        drop_prob: float = 0.0,
-    ):
-        """
-        Args:
-            chans: Number of output channels of the first convolution layer.
-            num_pools: Number of down-sampling and up-sampling layers.
-            in_chans: Number of channels in the input to the U-Net model.
-            out_chans: Number of channels in the output to the U-Net model.
-            drop_prob: Dropout probability.
-        """
-        super().__init__()
-
-        self.unet = Unet4D(
+        self.unet = WNet(
             in_chans=in_chans,
             out_chans=out_chans,
             chans=chans,
@@ -273,7 +165,7 @@ class SensitivityModel(nn.Module):
         """
         super().__init__()
         self.mask_center = mask_center
-        self.norm_unet = NormUnet3D(
+        self.norm_unet = NormUnet(
             chans,
             num_pools,
             in_chans=in_chans,
@@ -323,29 +215,24 @@ class SensitivityModel(nn.Module):
         mask: torch.Tensor,
         num_low_frequencies: Optional[int] = None,
     ) -> torch.Tensor:
-        ret_all = []
-        # Sequentially call same 3D U-Net for all offsets
-        for offset_idx in range(masked_kspace.shape[0]):
-            if self.mask_center:
-                pad, num_low_freqs = self.get_pad_and_num_low_freqs(
-                    mask[offset_idx], num_low_frequencies
-                )
-                masked_kspace = transforms.batched_mask_center(
-                    masked_kspace[offset_idx], pad, pad + num_low_freqs
-                )
-            # convert to image space
-            images, batches = self.chans_to_batch_dim(fastmri.ifft3c_new_offsets(masked_kspace[offset_idx]))
-            # estimate sensitivities
-            ret = self.divide_root_sum_of_squares(
-                self.batch_chans_to_chan_dim(self.norm_unet(images), batches)
+        if self.mask_center:
+            print("Masking center of kspace")
+            pad, num_low_freqs = self.get_pad_and_num_low_freqs(
+                mask, num_low_frequencies
             )
-            ret_all.append(ret)
-        ret_all = torch.cat(ret_all, 0)
-        # TODO: Create offset-dim-only U-Net
-        return ret_all
+            masked_kspace = transforms.batched_mask_center(
+                masked_kspace, pad, pad + num_low_freqs
+            )
+        # convert to image space
+        images, batches = self.chans_to_batch_dim(fastmri.ifft3c_new_offsets(masked_kspace))
+        # estimate sensitivities
+        ret = self.divide_root_sum_of_squares(
+            self.batch_chans_to_chan_dim(self.norm_unet(images), batches)
+        )
+        return ret
 
 
-class VarNet31D(nn.Module):
+class VarNet3D1D(nn.Module):
     """
     A full variational network model.
 
@@ -360,7 +247,7 @@ class VarNet31D(nn.Module):
         sens_pools: int = 4,
         chans: int = 18,
         pools: int = 4,
-        mask_center: bool = True,
+        mask_center: bool = False,
     ):
         """
         Args:
@@ -376,29 +263,28 @@ class VarNet31D(nn.Module):
                 calculation.
         """
         super().__init__()
-        # print("Sensitivity model disabled.")
         self.sens_net = SensitivityModel(
             chans=sens_chans,
             num_pools=sens_pools,
             mask_center=mask_center,
         )
-        # TODO: Adopt VarNetBlock to deal with 3D Unet + Offset-dim-only U-Net
         self.cascades = nn.ModuleList(
-            [VarNetBlock(NormUnet3D(chans, pools)) for _ in range(num_cascades)]
+            [VarNetBlock(NormUnet(chans, pools)) for _ in range(num_cascades)]
         )
 
     def forward(
         self,
         masked_kspace: torch.Tensor,
+        acs: torch.Tensor,
         mask: torch.Tensor,
         num_low_frequencies: Optional[int] = None,
     ) -> torch.Tensor:
-        sens_maps = self.sens_net(masked_kspace, mask, num_low_frequencies)
-        # sens_maps = torch.ones_like(masked_kspace)
+        sens_maps = self.sens_net(acs, mask, num_low_frequencies)  # Uses center k-space lines for estimation, feed ACS in case of GRAPPA
         kspace_pred = masked_kspace.clone()
 
-        for cascade in self.cascades:
+        for i, cascade in enumerate(self.cascades):
             kspace_pred = cascade(kspace_pred, masked_kspace, mask, sens_maps)
+        
         return fastmri.rss(fastmri.complex_abs(fastmri.ifft3c(kspace_pred)), dim=1)
 
 
@@ -447,10 +333,12 @@ class VarNetBlock(nn.Module):
 
 
 if __name__ == "__main__":
-    vn = VarNet31D(4, 2, 4, 2, 3).cuda()
+    vn = VarNet3D1D(6, 2, 2, 3, 2).cuda()
+    print(f"Number of parameters: ({sum(p.numel() for p in vn.parameters() if p.requires_grad)})")
     # Batch Channel Offsets Depth Height Width
-    for _ in range(3):
-        ret = vn(torch.rand((1, 15, 8, 8, 320, 180, 2)).cuda(), torch.rand((1, 15, 8, 8, 320, 180, 2)).cuda() > 0.5)
-        if torch.isnan(ret).any():
-            raise Exception()
-        print(ret.max())
+    with torch.no_grad():
+        with torch.autocast("cuda"):
+            ret = vn(torch.rand((1, 15, 8, 8, 8, 8, 2)).cuda(), torch.rand((1, 15, 8, 8, 8, 8, 2)).cuda(), torch.rand((1, 15, 8, 8, 8, 8, 2)).cuda() > 0.5)
+            print(ret.max())
+            
+            # TODO: Add 1D Offset Conv

@@ -110,6 +110,7 @@ def zero_filling_reco(masked_kspace):
 
 def main():
     results = {}
+    # TODO: Do for all cases (len(ds) // 2)
     idx = 0 * 2  # To get 16 offsets
     ds = Dataset("equispaced_fraction_dense_center_3d")
     model = Model()

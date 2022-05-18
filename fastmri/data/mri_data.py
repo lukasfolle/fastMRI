@@ -26,10 +26,12 @@ import numpy as np
 import torch
 import yaml
 from pygrappa.mdgrappa import mdgrappa
-
+import sys
+path = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+sys.path.insert(0, path)
 import fastmri
 from fastmri.data import transforms
-from fastmri.data.transforms import VarNetSample
+from fastmri.data.transforms import VarNetSample, VarNetDataTransformVolume4DGrappa
 from fastmri.data.subsample import create_mask_for_mask_type
 
 
@@ -571,14 +573,17 @@ class RealCESTData(VolumeDataset):
                  num_cols: Optional[Tuple[int]] = None,
                  cache_path=None,
                  num_offsets: int = 8,
-                 number_of_simultaneous_offsets=8):
+                 number_of_simultaneous_offsets=8,
+                 grappa_init=True):
         super().__init__(root, challenge, transform, use_dataset_cache, sample_rate,
                          volume_sample_rate, dataset_cache_file, num_cols, cache_path)
         self.cases = []
         self.root = root
         self.number_of_simultaneous_offsets = number_of_simultaneous_offsets
+        self.grappa_init = grappa_init
         print(f"Using {number_of_simultaneous_offsets} of offsets simultaneously.")
         self.load_data()
+        self.ram_cache = {}
 
     def load_data(self):
         root_path = self.root  # r"E:\Lukas\cest_data\Probanden\Mareike\output\train"
@@ -609,15 +614,35 @@ class RealCESTData(VolumeDataset):
         return len(self.cases)
 
     def __getitem__(self, i):
-        if len(self.cases) == 0:
-            self.load_data()
-            if len(self.cases) == 0:
-                raise FileNotFoundError("Could not find any case.")
+        # sample = self.get_cache(i)
+        sample = self.generate_sample(i)
+        return sample
+    
+    def get_cache(self, i: int):
+        if str(i) in self.ram_cache.keys():
+            return self.ram_cache[str(i)]
+        file_location = os.path.join(self.cache_path, f"{i}.pkl")
+        if os.path.exists(file_location):
+            with open(file_location, "rb") as handle:
+                samples = pickle.load(handle)
+        else:
+            samples = self.generate_sample(i)
+            with tempfile.TemporaryDirectory() as tempdir:
+                temp_location = os.path.join(tempdir, f"{i}.pkl")
+                with open(temp_location, 'wb') as handle:
+                    pickle.dump(samples, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                if Path(temp_location).is_file() and not Path(file_location).is_file():
+                    try:
+                        shutil.move(temp_location, file_location)
+                    except FileExistsError:
+                        pass
+        self.ram_cache[str(i)] = samples
+        return samples
+    
+    def generate_sample(self, i):
         sample = self.cases[i]
-        if self.transform is None:
-            return sample
         sample = self.transform(sample[0], sample[1],
-                                sample[2], sample[3], sample[4], -1)
+                        sample[2], sample[3], sample[4], -1)
         return sample
 
 
@@ -767,45 +792,38 @@ if __name__ == "__main__":
     from tqdm import trange
 
 
-    mask = create_mask_for_mask_type("poisson_3d", [0], [6])
-    transform = VarNetDataTransformVolume4D(mask_func=mask, use_seed=True)
+    mask = create_mask_for_mask_type("poisson_3d", [0], [9])
+    # use random masks for train transform, fixed masks for val transform
+    transform = VarNetDataTransformVolume4D(mask_func=mask, use_seed=False)
     # cest_ds = CESTDataset("/home/woody/iwi5/iwi5044h/fastMRI/multicoil_train", "multicoil", transform, use_dataset_cache=False, cache_path="/home/woody/iwi5/iwi5044h/Code/fastMRI/cache_test")
     cest_ds = RealCESTData(r"E:\Lukas\cest_data\Probanden\Mareike\output\multicoil_train", "multicoil", transform=transform, use_dataset_cache=False,
-                          cache_path=r"C:\Users\follels\Documents\fastMRI\cache\cache_val")
-
-    def replace_missing_data(kspace):
-        filled_kspace = deepcopy(kspace)
-        for offset in range(kspace.shape[1]):
-            filled_kspace[:, offset] = torch.where(filled_kspace[:, offset] == 0, torch.mean(kspace, 1), filled_kspace[:, offset])
-        return filled_kspace
-
+                          cache_path=r"C:\Users\follels\Documents\fastMRI\cache\poisson\cache_train")
 
     for i in trange(len(cest_ds)):
         item = cest_ds.__getitem__(i)
-        # masked_kspace = replace_missing_data(item.masked_kspace)
         print(f"\n\nItem {i}")
         # for offset in range(item.target.shape[0]):
-        offset = 0
-        mask = item.mask.numpy().squeeze()[..., 0]
-        # vol = item.target[offset].numpy().squeeze()
-        vol = item.target.numpy().squeeze()
-        print(vol.shape)
-        # mask = mask[offset, ..., 0]
-        plt.imshow(mask)
-        plt.title(f"Sample {i}, offset {offset}")
-        plt.show()
-        vol = (vol - vol.min()) / (vol.max() - vol.min())
-        vol = np.moveaxis(vol, 0, -1)
-        scroll_slices(vol, title=f"Sample {i} Offset {offset}")
+        # offset = 0
+        # mask = item.mask.numpy().squeeze()[..., 0]
+        # # vol = item.target[offset].numpy().squeeze()
+        # vol = item.target.numpy().squeeze()
+        # print(vol.shape)
+        # # mask = mask[offset, ..., 0]
+        # plt.imshow(mask)
+        # plt.title(f"Sample {i}, offset {offset}")
+        # plt.show()
+        # vol = (vol - vol.min()) / (vol.max() - vol.min())
+        # vol = np.moveaxis(vol, 0, -1)
+        # scroll_slices(vol, title=f"Sample {i} Offset {offset}")
 
-        k_space_downsampled = item.masked_kspace#[:, offset]
-        k_space_downsampled = torch.view_as_real(k_space_downsampled[..., 0] + 1j * k_space_downsampled[..., 1])
-        volume = fastmri.ifft3c(k_space_downsampled)
-        volume = fastmri.complex_abs(volume)
-        volume = fastmri.rss(volume, dim=0)
-        volume = (volume - volume.min()) / (volume.max() - volume.min())
-        volume = np.moveaxis(volume.numpy(), 0, -1)
-        scroll_slices(volume, title=f"Sample {i} Offset {offset}")
+        # k_space_downsampled = item.masked_kspace#[:, offset]
+        # k_space_downsampled = torch.view_as_real(k_space_downsampled[..., 0] + 1j * k_space_downsampled[..., 1])
+        # volume = fastmri.ifft3c(k_space_downsampled)
+        # volume = fastmri.complex_abs(volume)
+        # volume = fastmri.rss(volume, dim=0)
+        # volume = (volume - volume.min()) / (volume.max() - volume.min())
+        # volume = np.moveaxis(volume.numpy(), 0, -1)
+        # scroll_slices(volume, title=f"Sample {i} Offset {offset}")
 
 
     # from fastmri.models.varnet_4d import VarNet4D
