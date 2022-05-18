@@ -4,16 +4,24 @@
 #SBATCH --time=24:00:00
 #SBATCH --partition=a100
 #SBATCH --gres=gpu:a100:8
-#SBATCH --dependency=afterany:20
+#SBATCH --dependency=afterany:43794
 #SBATCH --begin=now+0hour
 
 unset SLURM_EXPORT_ENV 
+
+module load gcc
+module load git
+module load cuda
+module load cudnn
+module load mkl
 
 mkdir -p /scratch/cache
 mkdir -p /scratch/cache/cache_train
 mkdir -p /scratch/cache/cache_val
 
-# module load python/3.9-anaconda
+#echo "Clearing cache at /scratch/cache/"
+#rm -rf /scratch/cache/cache_train/*
+#rm -rf /scratch/cache/cache_val/*
 
 cd /home/woody/iwi5/iwi5044h/Code/fastMRI
 source /home/hpc/iwi5/iwi5044h/.bashrc
