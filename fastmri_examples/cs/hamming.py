@@ -48,18 +48,23 @@ def hamming_window_init(data=torch.ones((20, 128, 128))):
 
 
 class HammingWindowParametrized(torch.nn.Module):
-    def __init__(self, device="cuda"):
+    def __init__(self, device="cuda", alpha=0.54, beta=0.46):
         super().__init__()
-        self.alpha = torch.nn.Parameter(torch.tensor(0.54))
-        self.beta = torch.nn.Parameter(torch.tensor(0.46))
+        self.alpha = torch.nn.Parameter(torch.tensor(alpha))
+        self.beta = torch.nn.Parameter(torch.tensor(beta))
         self.device = device
     
     def hamming_function(self, data):
+        def min_max(data):
+            return (data - data.min()) / (data.max() - data.min())
         window_0 = self.alpha - self.beta * torch.cos(torch.pi * 2 * torch.linspace(0, data.shape[2], data.shape[2], device=self.device) / data.shape[2])
+        window_0 = min_max(window_0)
         data = data * window_0.reshape((1, 1, -1, 1, 1, 1))
         window_1 = self.alpha - self.beta * torch.cos(torch.pi * 2 * torch.linspace(0, data.shape[3], data.shape[3], device=self.device) / data.shape[3])
+        window_1 = min_max(window_1)
         data = data * window_1.reshape((1, 1, 1, -1, 1, 1))
         window_2 = self.alpha - self.beta * torch.cos(torch.pi * 2 * torch.linspace(0, data.shape[4], data.shape[4], device=self.device) / data.shape[4])
+        window_2 = min_max(window_2)
         data = data * window_2.reshape((1, 1, 1, 1, -1, 1))
         return data
     
@@ -73,18 +78,30 @@ class HammingWindowParametrized(torch.nn.Module):
         
 
 def main():
-    # hw = hamming_window()
-    # for k in range(10):
-    #     plt.subplot(2, 5, k + 1)
-    #     plt.imshow(hw[k * 2], vmin=0, vmax=1)
-    # plt.show()
-    # hwn = HammingWindowNetwork((20, 128, 256))
-    # pred = hwn(torch.rand((28, 8, 20, 128, 256, 2)))
-    # print(pred.shape)
-    data = torch.ones((1, 28, 8, 20, 100, 100, 2))
-    hwp = HammingWindowParametrized()
+    plt.subplot(2,2,1)
+    data = torch.ones((1, 28, 8, 20, 100, 100, 2), device="cuda")
+    hwp = HammingWindowParametrized(alpha=0.1, )
     res = hwp(data)
-    plt.imshow(res[0, 0, 4, 10, ..., 0].detach())#, vmin=-1, vmax=1)
+    plt.imshow(res[0, 0, 4, 10, ..., 0].cpu().detach())#, vmin=-1, vmax=1)
+    
+    plt.subplot(2,2,2)
+    data = torch.ones((1, 28, 8, 20, 100, 100, 2), device="cuda")
+    hwp = HammingWindowParametrized(alpha=0.3, )
+    res = hwp(data)
+    plt.imshow(res[0, 0, 4, 10, ..., 0].cpu().detach())#, vmin=-1, vmax=1)
+    
+    plt.subplot(2,2,3)
+    data = torch.ones((1, 28, 8, 20, 100, 100, 2), device="cuda")
+    hwp = HammingWindowParametrized(alpha=0.6, )
+    res = hwp(data)
+    plt.imshow(res[0, 0, 4, 10, ..., 0].cpu().detach())#, vmin=-1, vmax=1)
+    
+    plt.subplot(2,2,4)
+    data = torch.ones((1, 28, 8, 20, 100, 100, 2), device="cuda")
+    hwp = HammingWindowParametrized(alpha=20., )
+    res = hwp(data)
+    plt.imshow(res[0, 0, 4, 10, ..., 0].cpu().detach())#, vmin=-1, vmax=1)
+    
     plt.show()
     
 

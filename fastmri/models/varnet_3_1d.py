@@ -19,6 +19,7 @@ from fastmri.models.unet_3d_1d import Unet3D1D
 from fastmri.models.unet_1d import Unet1D
 from fastmri.models.wnet import WNet
 from fastmri.models.unet_3d_1d import ConvBlock
+from fastmri.models.image_net import ImageNet
 from torch.nn import Conv3d
 from fastmri_examples.cs.hamming import HammingWindowNetwork, HammingWindowParametrized
 
@@ -39,6 +40,7 @@ class NormUnet(nn.Module):
         in_chans: int = 2,
         out_chans: int = 2,
         drop_prob: float = 0.0,
+        dimensionality="3d"
     ):
         """
         Args:
@@ -49,14 +51,10 @@ class NormUnet(nn.Module):
             drop_prob: Dropout probability.
         """
         super().__init__()
-
-        self.unet = WNet(
-            in_chans=in_chans,
-            out_chans=out_chans,
-            chans=chans,
-            num_pool_layers=num_pools,
-            drop_prob=drop_prob,
-        )
+        if dimensionality == "3d":
+            self.unet = Unet3D1D(in_chans, out_chans, chans, num_pools, drop_prob)
+        elif dimensionality == "1d":
+            self.unet = Unet1D(in_chans, out_chans, chans, num_pools, drop_prob)
 
     def complex_to_chan_dim(self, x: torch.Tensor) -> torch.Tensor:
         b, c, o, d, h, w, two = x.shape
@@ -269,8 +267,10 @@ class VarNet3D1D(nn.Module):
             mask_center=mask_center,
         )
         self.cascades = nn.ModuleList(
-            [VarNetBlock(NormUnet(chans, pools)) for _ in range(num_cascades)]
+            [VarNetBlock(NormUnet(chans, pools, dimensionality="1d")) for _ in range(num_cascades)]
         )
+        # self.image_net = ImageNet()
+        # self.hamming_window = HammingWindowParametrized()
 
     def forward(
         self,
@@ -284,8 +284,12 @@ class VarNet3D1D(nn.Module):
 
         for i, cascade in enumerate(self.cascades):
             kspace_pred = cascade(kspace_pred, masked_kspace, mask, sens_maps)
+            # if i == 0:#len(self.cascades) - 2:
+            #     kspace_pred = self.hamming_window(kspace_pred)
         
-        return fastmri.rss(fastmri.complex_abs(fastmri.ifft3c(kspace_pred)), dim=1)
+        image = fastmri.rss(fastmri.complex_abs(fastmri.ifft3c(kspace_pred)), dim=1)
+        # image = self.image_net(image.unsqueeze(0)).squeeze(0)
+        return image
 
 
 class VarNetBlock(nn.Module):
@@ -340,5 +344,3 @@ if __name__ == "__main__":
         with torch.autocast("cuda"):
             ret = vn(torch.rand((1, 15, 8, 8, 8, 8, 2)).cuda(), torch.rand((1, 15, 8, 8, 8, 8, 2)).cuda(), torch.rand((1, 15, 8, 8, 8, 8, 2)).cuda() > 0.5)
             print(ret.max())
-            
-            # TODO: Add 1D Offset Conv

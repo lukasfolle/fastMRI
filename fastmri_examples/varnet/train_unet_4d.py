@@ -27,7 +27,7 @@ def cli_main(args):
     # data
     # ------------
     # this creates a k-space mask for transforming input data
-    mask = create_mask_for_mask_type("equispaced_fraction_3d", args.center_fractions, args.accelerations)
+    mask = create_mask_for_mask_type("equispaced_fraction_dense_center_3d", args.center_fractions, args.accelerations)
     # use random masks for train transform, fixed masks for val transform
     print("INFO: Grappa init")
     train_transform = VarNetDataTransformVolume4DGrappa(mask_func=mask, use_seed=False)
@@ -57,6 +57,12 @@ def cli_main(args):
     # model
     # ------------
     model = UnetModule(
+        lr=args.lr,
+        lr_step_size=args.lr_step_size,
+        lr_gamma=args.lr_gamma,
+        weight_decay=args.weight_decay,
+        chans=args.chans,
+        num_pool_layers=args.num_pool_layers,
     )
 
     # ------------
@@ -120,7 +126,7 @@ def build_args():
     
     parser.add_argument(
         "--number_of_simultaneous_offsets",
-        default=8,
+        default=16,
         type=int,
         help="Number of simultaneous offsets",
     )
@@ -132,7 +138,7 @@ def build_args():
         challenge="multicoil",  # only multicoil implemented for VarNet
         batch_size=batch_size,  # number of samples per batch
         test_path=None,  # path for test split, overwrites data_path
-        number_of_simultaneous_offsets=8,
+        number_of_simultaneous_offsets=16,
     )
 
     parser.add_argument(
@@ -140,6 +146,16 @@ def build_args():
         default=fetch_dir("cache_path", path_config),
         type=str,
         help="Folder to save cache to",
+    )
+
+    parser = UnetModule.add_model_specific_args(parser)
+    parser.set_defaults(
+        lr=0.001,  # Adam learning rate
+        # lr_step_size=100000,  # epoch at which to decrease learning rate
+        # lr_gamma=0.1,  # extent to which to decrease learning rate
+        weight_decay=0.0,  # weight regularization strength
+        chans=32,
+        num_pool_layers=4,
     )
 
     # trainer config
@@ -151,12 +167,10 @@ def build_args():
         seed=42,  # random seed
         deterministic=False,  # makes things slower, but deterministic
         default_root_dir=default_root_dir,  # directory for logs and checkpoints
-        max_epochs=1000,  # max number of epochs
+        max_epochs=2000,  # max number of epochs
         num_workers=0,
         log_every_n_steps=1,
         precision=16,
-        # overfit_batches=1,
-        # check_val_every_n_epoch=5,
     )
 
     args = parser.parse_args()
@@ -198,14 +212,3 @@ def run_cli():
 
 if __name__ == "__main__":
     run_cli()
-
-# 93:   No normalization, 4 offsets
-# 94:   Zero-mean-unit-variance norm, 4 offsets
-# 95:   Bigger model, 8 offsets, patch-wise
-# 96:   Bigger model, 8 offsets
-# 97:   Bigger model, 8 offsets, ssim loss
-
-# 100:    KSpace init with Grappa, Unet as denoiser
-# 101:    KSpace init with Grappa, Unet as denoiser, mse loss
-# 102/3:  KSpace init with Grappa, Hamming Window as denoiser, ssim loss
-# 104:    KSpace init with Grappa, Hamming Window as denoiser + hamming init, ssim loss

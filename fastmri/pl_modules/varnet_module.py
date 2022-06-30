@@ -11,11 +11,13 @@ import fastmri
 import torch
 import torch.nn.functional as F
 from fastmri.data import transforms
-from fastmri.models import VarNet, VarNet3D, VarNet4D, VarNet3D1D
-from fastmri.losses import combined_loss, ssim3D_loss, combined_loss_offsets
+from fastmri.models import VarNet, VarNet3D, VarNet4D, VarNet3D1D, Unet3D1D, Unet4D
+from fastmri.losses import combined_loss, ssim3D_loss
 import nibabel as nib
 import numpy as np
 import os
+from copy import deepcopy
+from monai.transforms import RandSpatialCropSamples
 
 from .mri_module import MriModule
 from skimage.metrics import peak_signal_noise_ratio, structural_similarity, normalized_root_mse
@@ -91,17 +93,18 @@ class VarNetModule(MriModule):
         self.lr_gamma = lr_gamma
         self.weight_decay = weight_decay
         self.mask_center = mask_center
-
+                
         if volume_training:
             print("Using VarNet3D1D")
-            self.varnet = VarNet3D1D(
-                num_cascades=self.num_cascades,
-                sens_chans=self.sens_chans,
-                sens_pools=self.sens_pools,
-                chans=self.chans,
-                pools=self.pools,
-                mask_center=self.mask_center
-            )
+            self.varnet = Unet3D1D(1, 1, num_pool_layers=2)
+            # self.varnet = VarNet3D1D(
+            #     num_cascades=self.num_cascades,
+            #     sens_chans=self.sens_chans,
+            #     sens_pools=self.sens_pools,
+            #     chans=self.chans,
+            #     pools=self.pools,
+            #     mask_center=self.mask_center
+            # )
         else:
             self.varnet = VarNet(
                 num_cascades=self.num_cascades,
@@ -127,11 +130,19 @@ class VarNetModule(MriModule):
 
     def training_step(self, batch, batch_idx):
         batch = batch[0]
-        kspace, acs, mask = batch.masked_kspace[None], batch.acs[None], batch.mask[None]
+        kspace, acs, mask = batch.filled_kspace[None], batch.acs[None], batch.mask[None]
         acs = torch.stack([acs for _ in range(8)], 2)
-        output = self(kspace, acs, mask, batch.num_low_frequencies)
-
+        acs = torch.stack((torch.real(acs), torch.imag(acs)), -1)
+        acs = F.pad(acs, (0, 0, 0, 0, 52, 52))
+        # output = self(kspace, acs, mask, batch.num_low_frequencies)        
+        with torch.no_grad():
+            volume = self.reco(kspace)
+            volume = volume.unsqueeze(0).unsqueeze(0)
+        output = self.varnet(volume)
+        output = output.squeeze()
+        
         target, output = transforms.center_crop_to_smallest(batch.target, output)
+        output = output.unsqueeze(0)
         loss = self.loss(
             output, target.unsqueeze(0),
         )
@@ -141,18 +152,27 @@ class VarNetModule(MriModule):
 
     def validation_step(self, batch, batch_idx):
         batch = batch[0]
-        kspace, acs, mask = batch.masked_kspace[None], batch.acs[None], batch.mask[None]
+        kspace, acs, mask = batch.filled_kspace[None], batch.acs[None], batch.mask[None]
         acs = torch.stack([acs for _ in range(8)], 2)
-        output = self(kspace, acs, mask, batch.num_low_frequencies)
+        acs = torch.stack((torch.real(acs), torch.imag(acs)), -1)
+        acs = F.pad(acs, (0, 0, 0, 0, 52, 52))
+        # output = self(kspace, acs, mask, batch.num_low_frequencies)        
+        with torch.no_grad():
+            volume = self.reco(kspace)
+            volume = volume.unsqueeze(0).unsqueeze(0)
+        output = self.varnet(volume)
+        output = output.squeeze()
+        
         
         target, output = transforms.center_crop_to_smallest(batch.target, output)
+        output = output.unsqueeze(0)
         loss = self.loss(
             output, target.unsqueeze(0),
         )
         self.log("validation_loss", loss)
-        # if self.current_epoch % 10 == 0:
-            # self.log_zero_filling_metrics(batch.filled_kspace[None], batch.target[None])
-            # self.save_predictions_to_nifti(output, target, batch.filled_kspace, batch_idx)
+        if self.current_epoch % 10 == 0:
+            self.log_zero_filling_metrics(batch.filled_kspace[None], batch.target[None])
+            self.save_predictions_to_nifti(output.float(), target, batch.filled_kspace, batch_idx)
             
         return {
             "batch_idx": batch_idx,
@@ -164,9 +184,21 @@ class VarNetModule(MriModule):
             "target": target,
             "masked_kspace": batch.masked_kspace[None],
             "val_loss": loss,
-            # "hamming_window": self.varnet.hamming_window.hamming_window_layer.weight.detach().cpu(),
         }
-
+    
+    def reco(self, kspace):
+        kspace = kspace.squeeze()
+        with torch.no_grad():
+            images = []
+            for offset in range(kspace.shape[1]):
+                image = fastmri.ifft3c(kspace[:, offset])
+                image = fastmri.complex_abs(image)
+                image = fastmri.rss(image, dim=0).squeeze()
+                image = transforms.complex_center_crop_3d(image, (image.shape[0], 128, 128))
+                images.append(image)
+            images = torch.stack(images, 0)
+            return images
+        
     def test_step(self, batch, batch_idx):
         output = self(batch.masked_kspace, batch.mask, batch.num_low_frequencies)
 

@@ -14,6 +14,7 @@ import torch
 import torch.nn.functional as F
 from copy import deepcopy
 from pygrappa.mdgrappa import mdgrappa
+from tqdm import tqdm
 
 
 from .subsample import MaskFunc
@@ -431,6 +432,7 @@ class VarNetSample(NamedTuple):
     """
 
     masked_kspace: torch.Tensor
+    # full_kspace: Optional[torch.Tensor]
     mask: torch.Tensor
     num_low_frequencies: Optional[int]
     target: torch.Tensor
@@ -710,17 +712,18 @@ class VarNetDataTransformVolume4D(VarNetDataTransform):
         acq_end = attrs["padding_right"]
 
         crop_size = (attrs["recon_size"][0], attrs["recon_size"][1])
-
+        filled_kspace = None
         if self.mask_func is not None:
-            masked_kspace, acs, mask_torch, num_low_frequencies = self.apply_mask(
+            filled_kspace, masked_kspace, acs, mask_torch, num_low_frequencies = self.apply_mask(
                 kspace_torch, self.mask_func, seed=seed, padding=(acq_start, acq_end)
             )
             masked_kspace_imputed = self.impute_missing_kspace_over_offsets(deepcopy(masked_kspace))
 
             sample = VarNetSample(
                 masked_kspace=masked_kspace,
+                # full_kspace=kspace_torch,
                 mask=mask_torch.to(torch.bool),
-                filled_kspace=None,
+                filled_kspace=filled_kspace,
                 acs=acs,
                 num_low_frequencies=num_low_frequencies,
                 target=target_torch,
@@ -764,9 +767,17 @@ class VarNetDataTransformVolume4DGrappa(VarNetDataTransformVolume4D):
                    padding: Optional[Sequence[int]] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, int]:
         shape = (1, data.shape[-4], data.shape[-3], data.shape[-1])
-        masks, num_low_frequencies = mask_func(shape, offset)
+        masks = []
+        for offset in range(data.shape[1]):
+            if seed is None:
+                mask_seed = offset
+            else:
+                mask_seed = (offset, *seed)
+            mask, num_low_frequencies = mask_func(shape, offset, seed=mask_seed)
+            masks.append(mask)
+        masks = torch.stack(masks, 0)
         masks_w_center = deepcopy(masks)
-        masks_w_center[:, shape[-2] // 2 - 12:shape[-2] // 2 + 12] = 1
+        masks_w_center[..., shape[-2] // 2 - 12:shape[-2] // 2 + 12] = 1
         masks_w_center = torch.stack((masks_w_center, masks_w_center), -1)
         masks = torch.stack((masks, masks), -1)
         masks_w_center = masks_w_center.unsqueeze(0).unsqueeze(-2)
@@ -779,9 +790,11 @@ class VarNetDataTransformVolume4DGrappa(VarNetDataTransformVolume4D):
         acs = masked_data_w_acs[:, 0, :, filled_kspace.shape[3] // 2 - 12:filled_kspace.shape[3] // 2 + 12]  # First offset as acs
         acs = (acs[..., 0] + 1j * acs[..., 1]).numpy().squeeze()
         before = time.time()
-        for offset in range(filled_kspace.shape[1]):
+        
+        for offset in tqdm(range(filled_kspace.shape[1])):
             kspace = (filled_kspace[:, offset, ..., 0].numpy() + 1j * filled_kspace[:, offset, ..., 1].numpy())
-            kspace_est, weights = mdgrappa(kspace, acs, coil_axis=0, ret_weights=True, weights=weights)
+            # kspace_est, weights = mdgrappa(kspace, acs, coil_axis=0, ret_weights=True, weights=weights)
+            kspace_est = mdgrappa(kspace, acs, coil_axis=0, ret_weights=False)
             filled_kspace[:, offset] = torch.stack((torch.real(torch.from_numpy(kspace_est)), torch.imag(torch.from_numpy(kspace_est))), -1)
         after = time.time()
         print(f"GRAPPA took {(after - before) / 60:.2f} minutes to complete.")

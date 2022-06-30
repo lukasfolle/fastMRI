@@ -122,7 +122,7 @@ class Conv1dMod(Conv1d):
         self.d = d
         self.h = h
         self.w = w
-        return x.permute(0, 1, 3, 4, 5, 2).reshape(b * d * h * w, c, o)
+        return x.permute(0, 3, 4, 5, 1, 2).reshape(b * d * h * w, c, o)
 
     def batch_offset_to_third_dim(self, x: torch.Tensor) -> torch.Tensor:
         bdhw, c, o = x.shape
@@ -142,7 +142,7 @@ class ConvTranspose1dMod(ConvTranspose1d):
         self.d = d
         self.h = h
         self.w = w
-        return x.permute(0, 1, 3, 4, 5, 2).reshape(b * d * h * w, c, o)
+        return x.permute(0, 3, 4, 5, 1, 2).reshape(b * d * h * w, c, o)
 
     def batch_offset_to_third_dim(self, x: torch.Tensor) -> torch.Tensor:
         bdhw, c, o = x.shape
@@ -177,11 +177,11 @@ class ConvBlock(nn.Module):
         self.drop_prob = drop_prob
         
         self.layers = nn.Sequential(
-            Conv1dMod(in_chans, out_chans, kernel_size=7, padding=3, bias=False),
+            Conv1dMod(in_chans, out_chans, kernel_size=3, padding=1, bias=False),
             InstanceNorm4d(out_chans),
             nn.LeakyReLU(negative_slope=0.2, inplace=True),
             # nn.Dropout3d(drop_prob),
-            Conv1dMod(out_chans, out_chans, kernel_size=7, padding=3, bias=False, stride=stride),
+            Conv1dMod(out_chans, out_chans, kernel_size=3, padding=1, bias=False, stride=stride),
             InstanceNorm4d(out_chans),
             nn.LeakyReLU(negative_slope=0.2, inplace=True),
             # nn.Dropout3d(drop_prob),

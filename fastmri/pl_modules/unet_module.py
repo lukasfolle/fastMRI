@@ -6,18 +6,25 @@ LICENSE file in the root directory of this source tree.
 """
 
 from argparse import ArgumentParser
+import numpy as np
+import os
+import nibabel as nib
 
 import torch
 from fastmri.models import Unet
 from fastmri.models.unet_4d import Unet4D
+from fastmri.models.unet_3d_1d import Unet3D1D
+from fastmri.models.varnet_3_1d import NormUnet
+from fastmri.models.unet_1d import Unet1D
 from torch.nn import functional as F
 import fastmri
 from fastmri.data import transforms
-from fastmri.losses import combined_loss_offsets
+from fastmri.losses import CombinedLoss
 
 from .mri_module import MriModule
-from monai.transforms import RandSpatialCrop
-from fastmri_examples.cs.hamming import HammingWindowNetwork
+from monai.transforms import RandSpatialCrop, RandSpatialCropSamplesd
+from skimage.metrics import peak_signal_noise_ratio, structural_similarity, normalized_root_mse
+
 
 
 class UnetModule(MriModule):
@@ -35,7 +42,7 @@ class UnetModule(MriModule):
         in_chans=1,
         out_chans=1,
         chans=32,
-        num_pool_layers=4,
+        num_pool_layers=2,
         drop_prob=0.0,
         lr=0.001,
         lr_step_size=40,
@@ -74,32 +81,18 @@ class UnetModule(MriModule):
         self.lr_step_size = lr_step_size
         self.lr_gamma = lr_gamma
         self.weight_decay = weight_decay
-        self.rand_spatial_crop = RandSpatialCrop([8, 32, 32], random_size=False)
-
-        # self.unet = Unet4D(
-        #     in_chans=self.in_chans,
-        #     out_chans=self.out_chans,
-        #     chans=self.chans,
-        #     num_pool_layers=3,
-        #     drop_prob=self.drop_prob,
-        # )
-        self.hamming_window_network = HammingWindowNetwork((20, 128, 256))
+        # self.loss = combined_loss_offsets
+        self.loss = CombinedLoss()
+        self.num_augmentation_samples = 2
+        self.train_augmentation = None  # RandSpatialCropSamplesd(keys=["volume", "target"], roi_size=(8, 8, 92, 92), num_samples=self.num_augmentation_samples, random_size=False)
+        # self.model = Unet3D1D(1, 1, chans=chans, num_pool_layers=num_pool_layers)
+        self.model = Unet1D(1, 1, chans=chans, num_pool_layers=num_pool_layers)
 
     def forward(self, image):
-        return self.hamming_window_network(image.unsqueeze(0).unsqueeze(1))
-    
-    def rand_augment(self, image, target):
-        with torch.no_grad():
-            stack = torch.stack((image, target), 0).squeeze()
-            stack = stack.reshape((-1, 20, 128, 128))
-            stack = self.rand_spatial_crop(stack)
-            stack = stack.reshape((2, 8, 8, 32, 32))
-            image = stack[0]
-            target = stack[1]
-            return image, target
-
+        return self.model(image)
 
     def reco(self, kspace):
+        kspace = kspace.squeeze()
         with torch.no_grad():
             images = []
             for offset in range(kspace.shape[1]):
@@ -112,44 +105,62 @@ class UnetModule(MriModule):
             return images
 
     def training_step(self, batch, batch_idx):
-        # image = self.reco(batch[0].masked_kspace)
-        target = batch[0].target
-        # image, target = self.rand_augment(image, target)    
-        # TODO: Should we do this?   
-        # image = (image - image.mean()) / image.std()
-        # image = image[:, 2:-2]
-        # target = (target - target.mean()) / target.std()
-        # target = target[:, 2:-2]
-        output = self(batch[0].masked_kspace).unsqueeze(0).unsqueeze(0)
-        # loss = F.l1_loss(output, target)
-        
-        loss = combined_loss_offsets(output.squeeze(0), target.unsqueeze(0))
+        batch = batch[0]
+        kspace, acs, mask = batch.filled_kspace[None], batch.acs[None], batch.mask[None]
 
-        self.log("train_loss", loss.detach())
+        with torch.no_grad():
+            volume = self.reco(kspace)
+            volume = volume.unsqueeze(0).unsqueeze(0)
+            target = batch.target.unsqueeze(0)
+            if self.train_augmentation is not None:
+                ret = self.train_augmentation({"volume": volume.squeeze(0), "target": target})
+                volume = torch.stack([ret[i]["volume"] for i in range(self.num_augmentation_samples)], 0)
+                target = torch.stack([ret[i]["target"] for i in range(self.num_augmentation_samples)], 0)
+                if isinstance(volume, list):
+                    volume = torch.stack(volume)
+            else:
+                target = target.unsqueeze(0)
+        output = self(volume)
+        
+        output = (output - output.min()) / (output.max() - output.min())
+        output = (volume.max() - volume.min()) * output - volume.min()
+
+        loss = self.loss(output, target)
+        self.log("train_loss", loss)
 
         return loss
 
     def validation_step(self, batch, batch_idx):
-        # image = self.reco(batch[0].masked_kspace)
-        # image = (image - image.mean()) / image.std()
-        # image = image[:, 2:-2]
-        target = batch[0].target
-        # target = (target - target.mean()) / target.std()
-        # target = target[:, 2:-2]
-        output = self(batch[0].masked_kspace).unsqueeze(0).unsqueeze(0)
-        # loss = F.l1_loss(output, target)
-        loss = combined_loss_offsets(output.squeeze(0), target.unsqueeze(0))
+        batch = batch[0]
+        kspace, acs, mask = batch.filled_kspace[None], batch.acs[None], batch.mask[None]
+
+        with torch.no_grad():
+            volume = self.reco(kspace)
+            volume = volume.unsqueeze(0).unsqueeze(0)
+        output = self(volume)
+
+        target = batch.target.unsqueeze(0).unsqueeze(1)
+        
+        output = (output - output.min()) / (output.max() - output.min())
+        output = (volume.max() - volume.min()) * output - volume.min()
+        
+        loss = self.loss(output, target)
+
         self.log("validation_loss", loss)
+        if self.current_epoch % 10 == 0:
+            self.log_zero_filling_metrics(batch.filled_kspace[None], batch.target[None])
+            self.save_predictions_to_nifti(output.float(), target, batch.filled_kspace, batch_idx)
+            
         return {
             "batch_idx": batch_idx,
-            "fname": "test",
-            "slice_num": 0,
-            "max_value": 0,
+            "fname": batch.fname,
+            "slice_num": batch.slice_num,
+            "max_value": batch.max_value,
             "output": output.squeeze(0),
+            "mask": batch.mask,
             "target": target.squeeze(0),
+            "masked_kspace": batch.masked_kspace[None],
             "val_loss": loss,
-            "masked_kspace": batch[0].masked_kspace,
-            "hamming_window": self.hamming_window_network.hamming_window_layer.weight.detach().cpu(),
         }
 
     # def test_step(self, batch, batch_idx):
@@ -169,11 +180,53 @@ class UnetModule(MriModule):
             lr=self.lr,
             weight_decay=self.weight_decay,
         )
-        scheduler = torch.optim.lr_scheduler.StepLR(
-            optim, self.lr_step_size, self.lr_gamma
-        )
+        # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        #     optim, mode="min", factor=0.5, patience=50, verbose=True
+        # )
 
-        return [optim], [scheduler]
+        return {"optimizer": optim}  # , "lr_scheduler": scheduler, "monitor": "validation_loss"}
+
+    def log_zero_filling_metrics(self, kspace, target):
+        metrics = {"mse": 0, "ssim": 0, "psnr": 0}
+        for offset in range(kspace.shape[2]):
+            t = target[:, offset].squeeze()
+            k_space_downsampled = kspace[:, :, offset].squeeze()
+            k_space_downsampled = torch.view_as_real(k_space_downsampled[..., 0] + 1j * k_space_downsampled[..., 1])
+            volume = fastmri.ifft3c(k_space_downsampled)
+            volume = fastmri.complex_abs(volume)
+            volume = fastmri.rss(volume, dim=0)
+            t, volume = transforms.center_crop_to_smallest(t, volume)
+            t = (t - t.min()) / (t.max() - t.min())
+            volume = (volume - volume.min()) / (volume.max() - volume.min())
+            t = t.cpu().numpy()
+            volume = volume.cpu().numpy()
+            metrics["mse"] = metrics["mse"] + normalized_root_mse(t, volume)
+            metrics["psnr"] = metrics["psnr"] + peak_signal_noise_ratio(t, volume, data_range=(t.max() - t.min()))
+            metrics["ssim"] = metrics["ssim"] + structural_similarity(t, volume, win_size=3)
+        metrics["mse"] = metrics["mse"] / kspace.shape[2]
+        metrics["psnr"] = metrics["psnr"] / kspace.shape[2]
+        metrics["ssim"] = metrics["ssim"] / kspace.shape[2]
+        self.log("val_metrics/nrmse_zfil", metrics["mse"])
+        self.log("val_metrics/psnr_zfil", metrics["psnr"])
+        self.log("val_metrics/ssim_zfil", metrics["ssim"])
+
+    def save_predictions_to_nifti(self, output, target, masked_kspace, batch_idx):
+        affine_matrix = np.array([[4, 0, 0, 0], [0, 1.203, 0, 0], [0, 0, 1.203, 0], [0, 0, 0, 1]])
+        reco_nii = nib.Nifti1Image(np.flip(output.cpu().numpy().squeeze().transpose((1, 2, 3, 0)), 2), affine=affine_matrix)
+        nib.save(reco_nii, os.path.join(r"E:\Lukas\cest_data\Probanden\Mareike\prediction", f"version_{self.logger.version}_val_prediction_{batch_idx}_epoch_{self.current_epoch}.nii.gz"))
+        reco_nii = nib.Nifti1Image(np.flip(target.cpu().numpy().squeeze().transpose((1, 2, 3, 0)), 2), affine=affine_matrix)
+        nib.save(reco_nii, os.path.join(r"E:\Lukas\cest_data\Probanden\Mareike\prediction", f"val_target_{batch_idx}.nii.gz"))
+        default_reco = []
+        for offset in range(masked_kspace.shape[1]):
+            k_space_downsampled = masked_kspace[:, offset].squeeze()
+            k_space_downsampled = torch.view_as_real(k_space_downsampled[..., 0] + 1j * k_space_downsampled[..., 1])
+            volume = fastmri.ifft3c(k_space_downsampled)
+            volume = fastmri.complex_abs(volume)
+            volume = fastmri.rss(volume, dim=0)
+            default_reco.append(volume)
+        target, default_reco = transforms.center_crop_to_smallest(target, torch.stack(default_reco, 0))
+        reco_nii = nib.Nifti1Image(np.flip(default_reco.cpu().numpy().squeeze().transpose((1, 2, 3, 0)), 2), affine=affine_matrix)
+        nib.save(reco_nii, os.path.join(r"E:\Lukas\cest_data\Probanden\Mareike\prediction", f"val_default_reco_{batch_idx}.nii.gz"))
 
     @staticmethod
     def add_model_specific_args(parent_parser):  # pragma: no-cover

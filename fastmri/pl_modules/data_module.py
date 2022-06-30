@@ -15,7 +15,7 @@ import monai.data.utils
 import fastmri
 import pytorch_lightning as pl
 import torch
-from fastmri.data import CombinedSliceDataset, SliceDataset, VolumeDataset, CESTDataset, RealCESTData
+from fastmri.data import CombinedSliceDataset, SliceDataset, VolumeDataset, CESTDataset, RealCESTData, CenterKspaceCEST
 
 
 def worker_init_fn(worker_id):
@@ -102,7 +102,7 @@ class FastMriDataModule(pl.LightningDataModule):
         distributed_sampler: bool = False,
         volume_training: bool = False,
         cache_dir=None,
-        number_of_simultaneous_offsets=8,
+        number_of_simultaneous_offsets=16,
     ):
         """
         Args:

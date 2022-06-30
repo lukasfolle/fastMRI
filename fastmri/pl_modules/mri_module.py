@@ -98,7 +98,7 @@ class MriModule(pl.LightningModule):
 
 
         target = val_logs["target"].cpu().numpy()
-        target = (target - target.min()) / (target.max() - target.min() + 1e-6).squeeze()
+        target = ((target - target.min()) / (target.max() - target.min() + 1e-6)).squeeze()
         prediction = val_logs["output"].cpu().numpy()
         prediction = (prediction - prediction.min()) / (prediction.max() - prediction.min() + 1e-6)
         prediction = prediction.squeeze()
@@ -133,7 +133,7 @@ class MriModule(pl.LightningModule):
                 error = (error - error.min()) / (error.max() - error.min() + 1e-10)
                 default_reco = reco(val_logs["masked_kspace"].unsqueeze(0)[i], val_logs["target"].squeeze()[i])
                 default_reco = (default_reco - default_reco.min()) / (default_reco.max() - default_reco.min() + 1e-10)
-                self.log_image(f"{key}/target", target[:, target.shape[1] // 2, ...])
+                self.log_image(f"{key}/target", target[:, 0, target.shape[2] // 2, ...])
                 self.log_image(f"{key}/reconstruction", output[:, 0, output.shape[2] // 2, ...])
                 self.log_image(f"{key}/error", error[:, 0, error.shape[2] // 2, ...])
                 # self.log_image(f"{key}/default_reco", default_reco[default_reco.shape[0] // 2][None])
@@ -142,7 +142,11 @@ class MriModule(pl.LightningModule):
                     mask = val_logs["mask"][i]
                     mask = mask / mask.max()
                     mask = mask.squeeze()[..., 0]
-                    self.log_image(f"{key}/mask", mask[None, 0])
+                    if len(mask.shape) > 2:
+                        mask = mask[None, 0]
+                    else:
+                        mask = mask[None]
+                    self.log_image(f"{key}/mask", mask)  # TODO: CHange back to just mask
 
             return {
                 "val_loss": val_logs["val_loss"],

@@ -13,7 +13,7 @@ class WNet(nn.Module):
     
     def forward(self, x):
         x = self.unet3d(x)
-        x = self.unet1d(x)
+        # x = self.unet1d(x)
         return x
 
 

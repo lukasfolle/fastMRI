@@ -10,6 +10,7 @@ from torch import nn
 from torch.nn import functional as F
 from torch.nn import Conv3d, ConvTranspose3d, InstanceNorm3d
 from fastmri.models.convnd import InstanceNorm4d
+from fastmri.models.unet_1d import Conv1dMod
 
 
 class Unet3D1D(nn.Module):
@@ -114,6 +115,29 @@ class Unet3D1D(nn.Module):
 
         return output
 
+
+class Conv3d1dMod(nn.Module):
+    def __init__(self,
+        in_channels: int,
+        out_channels: int,
+        kernel_size,
+        stride = 1,
+        padding = 0,
+        dilation = 1,
+        groups = 1,
+        bias = True,
+        padding_mode = 'zeros',
+        device=None,
+        dtype=None):
+        super().__init__()
+        self.conv3dmod = Conv3dMod(in_channels, out_channels, kernel_size, stride, padding, dilation, groups, bias, padding_mode, device, dtype)
+        self.conv1dmod = Conv1dMod(out_channels, out_channels, 7, 1, 3, dilation, groups, bias, padding_mode, device, dtype)
+    
+    def forward(self, x):
+        x = self.conv3dmod(x)
+        x = self.conv1dmod(x)
+        return x
+        
 
 class Conv3dMod(Conv3d):
     def offset_to_batch_dim(self, x: torch.Tensor) -> torch.Tensor:

@@ -77,7 +77,6 @@ class Dataset:
         item = self.dataset.__getitem__(i)
         return item
 
-
 def grappa_reco(filled_kspace, do_hamming=True):
     hamming = HammingWindowParametrized(device="cpu")
     grappa_volumes = []

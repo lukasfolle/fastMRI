@@ -444,7 +444,6 @@ class EquispacedMaskFractionFunc(MaskFunc):
 class EquispacedMaskFractionFunc3D(MaskFunc3D):
     def __init__(self, center_fractions, accelerations, allow_any_combination=False, seed=None):
         super().__init__(center_fractions, accelerations, allow_any_combination, seed)
-        # self.eliptical_mask = np.load(os.path.join(os.path.dirname(__file__), "kspace_eliptical_mask.npy")).astype(float)
         self.offset_mask = 0
 
     def calculate_acceleration_mask_3D(
@@ -482,7 +481,6 @@ class EquispacedMaskFractionFunc3D(MaskFunc3D):
 class EquispacedMaskFractionFunc3D(MaskFunc3D):
     def __init__(self, center_fractions, accelerations, allow_any_combination=False, seed=None):
         super().__init__(center_fractions, accelerations, allow_any_combination, seed)
-        # self.eliptical_mask = np.load(os.path.join(os.path.dirname(__file__), "kspace_eliptical_mask.npy")).astype(float)
         self.offset_mask = 0
 
     def calculate_acceleration_mask_3D(
@@ -519,6 +517,10 @@ class EquispacedMaskFractionFunc3D(MaskFunc3D):
 
 
 class EquispacedMaskFractionFuncCenterDense3D(MaskFunc3D):
+    def __init__(self, center_fractions, accelerations, allow_any_combination=False, seed=None):
+        super().__init__(center_fractions, accelerations, allow_any_combination, seed)
+        self.offset_mask = 0
+        
     def calculate_acceleration_mask_3D(
         self,
         num_cols: int,
@@ -528,10 +530,45 @@ class EquispacedMaskFractionFuncCenterDense3D(MaskFunc3D):
         shape,
         seed
     ) -> np.ndarray:
-        mask_offset = phase_offset = 0
+        if self.offset_mask > 7:
+            self.offset_mask = 0
+        # print("WARNING: Offset is alsways zero for subsampling!")
+        # self.offset_mask = 0
+        mask_offset = [0, 2, 1, 3, 0, 2, 1, 3][self.offset_mask]
+        phase_offset = [0, 0, 1, 1, 2, 2, 3, 3][self.offset_mask]
         mask = np.zeros((shape[-3], shape[-2]))
         mask[mask_offset::4, phase_offset::4] = 1.0
-        mask[5:15:2, 32:-32:2] = 1
+        center_offset = 5 + self.offset_mask % 2
+        phase_offset = 32 + (self.offset_mask // 2) % 2
+        mask[center_offset:center_offset+10, phase_offset:phase_offset+62] = 0
+        mask[center_offset:center_offset+10:2, phase_offset:phase_offset+62:2] = 1
+        self.offset_mask = self.offset_mask + 1
+        return mask
+
+class EquispacedMaskFractionFuncCenterFull3D(MaskFunc3D):
+    def __init__(self, center_fractions, accelerations, allow_any_combination=False, seed=None):
+        super().__init__(center_fractions, accelerations, allow_any_combination, seed)
+        self.offset_mask = 0
+        
+    def calculate_acceleration_mask_3D(
+        self,
+        num_cols: int,
+        acceleration: int,
+        offset: Optional[int],
+        num_low_frequencies: int,
+        shape,
+        seed
+    ) -> np.ndarray:
+        if self.offset_mask > 7:
+            self.offset_mask = 0
+        mask_offset = [0, 2, 1, 3, 0, 2, 1, 3][self.offset_mask]
+        phase_offset = [0, 0, 1, 1, 2, 2, 3, 3][self.offset_mask]
+        mask = np.zeros((shape[-3], shape[-2]))
+        mask[mask_offset::4, phase_offset::4] = 1.0
+        center_offset = 5 + self.offset_mask % 2
+        phase_offset = 32 + (self.offset_mask // 2) % 2
+        mask[center_offset:center_offset+10, phase_offset:phase_offset+62] = 1
+        self.offset_mask = self.offset_mask + 1
         return mask
 
 
@@ -629,7 +666,6 @@ class PoissonDensitiyMask3D(MaskFunc3D):
             mask = self.poisson_disc_calculation(num_cols, acceleration, offset, num_low_frequencies, shape, seed)
         return mask
             
-
 
 class CartesianOffsetMask3D(MaskFunc3D):
     def __init__(self, accelerations, allow_any_combination=False, seed=None):
@@ -814,6 +850,8 @@ def create_mask_for_mask_type(
         return EquispacedMaskFractionFunc3D(center_fractions, accelerations)
     elif mask_type_str == "equispaced_fraction_dense_center_3d":
         return EquispacedMaskFractionFuncCenterDense3D(center_fractions, accelerations)    
+    elif mask_type_str == "equispaced_fraction_full_center_3d":
+        return EquispacedMaskFractionFuncCenterFull3D(center_fractions, accelerations)    
     elif mask_type_str == "magic":
         return MagicMaskFunc(center_fractions, accelerations)
     elif mask_type_str == "magic_fraction":
@@ -832,14 +870,20 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
     import numpy as np
     from tqdm import tqdm
-    vdm = PoissonDensitiyMask3D([6])
+    vdm = EquispacedMaskFractionFuncCenterDense3D([0], [6])
     # masks = []
     # for _ in tqdm(range(800)):
     #     masks.append(vdm([1, 20, 128, 1]))
     # masks = masks
-    mask = vdm([1, 20, 128, 1])
-    print(f"Acceleration: {mask[0].numel() / mask[0].sum()}")
-    plt.imshow(mask[0].squeeze())
+    masks = [vdm([1, 20, 128, 1])[0] for _ in range(8)]
+    masks = torch.stack(masks, 0)
+    print(f"Acceleration: {masks[0].numel() / masks[0].sum()}")
+    for k in range(8):
+        plt.subplot(4, 2, k + 1)
+        plt.imshow(masks[k].squeeze())
+    plt.show()
+    plt.figure()
+    plt.imshow(masks.sum(0))
     plt.show()
 
     # def create_mask(shape, num_offsets=16):

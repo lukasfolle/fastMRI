@@ -7,6 +7,8 @@ LICENSE file in the root directory of this source tree.
 
 from .unet import Unet
 from .unet_3d import Unet3D
+from .unet_3d_1d import Unet3D1D
+from .unet_4d import Unet4D
 from .varnet import NormUnet, SensitivityModel, VarNet, VarNetBlock
 from .varnet_3d import VarNet3D
 from .varnet_4d import VarNet4D

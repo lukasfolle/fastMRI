@@ -270,7 +270,7 @@ class VarNet4D(nn.Module):
         self.cascades = nn.ModuleList(
             [VarNetBlock(NormUnet(chans, pools)) for _ in range(num_cascades)]
         )
-        self.image_space_net = NormUnet(1, 3)
+        # self.image_space_net = NormUnet(1, 3)
         # self.hamming_window = HammingWindowParametrized()
 
     def forward(
@@ -288,13 +288,13 @@ class VarNet4D(nn.Module):
             # if i == len(self.cascades) - 2:
             #     kspace_pred = self.hamming_window(kspace_pred)
         
-        image_space = fastmri.rss(fastmri.complex_abs(fastmri.ifft3c(kspace_pred)), dim=1)
-        image_space = torch.stack((image_space, image_space), -1)
-        image_space = self.image_space_net(image_space.unsqueeze(0))
-        image_space = image_space[0, ..., 0]
-        return image_space
+        # image_space = fastmri.rss(fastmri.complex_abs(fastmri.ifft3c(kspace_pred)), dim=1)
+        # image_space = torch.stack((image_space, image_space), -1)
+        # image_space = self.image_space_net(image_space.unsqueeze(0))
+        # image_space = image_space[0, ..., 0]
+        # return image_space
         
-        # return fastmri.rss(fastmri.complex_abs(fastmri.ifft3c(kspace_pred)), dim=1)
+        return fastmri.rss(fastmri.complex_abs(fastmri.ifft3c(kspace_pred)), dim=1)
 
 
 class VarNetBlock(nn.Module):

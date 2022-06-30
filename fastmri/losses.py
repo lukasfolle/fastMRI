@@ -243,9 +243,16 @@ def combined_loss(img1, img2):
     return 0.9 * ssim_loss + 0.1 * mse_loss
 
 
-def combined_loss_offsets(img1, img2):
-    mse_loss = F.l1_loss(img1, img2)
-    # mse_loss = F.mse_loss(img1, img2)
-    # tv = total_variation(img1)
-    # ssim_loss = sum([ssim3D_loss(img1[:, offset].unsqueeze(0), img2[:, offset].unsqueeze(0)) for offset in range(img1.shape[1])]) / img1.shape[1]
-    return mse_loss  # ssim_loss  # 0.9 * ssim_loss + 0.1 * mse_loss
+class CombinedLoss(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        # self.w = torch.nn.Parameter(torch.tensor(0.5, device="cuda"))
+        
+    def forward(self, img1, img2):        
+        mae_loss = F.l1_loss(img1, img2)
+        # mse_loss = F.mse_loss(img1, img2)
+        # mae_loss = sum([F.l1_loss(img1[:, offset], img2[:, offset]) for offset in range(img1.shape[1])]) / img1.shape[1]
+        # ssim_loss = sum([ssim3D_loss(img1[:, offset].unsqueeze(0), img2[:, offset].unsqueeze(0), window_size=5) for offset in range(img1.shape[1])]) / img1.shape[1]
+        # weight = F.relu(self.w)
+        # return mae_loss + 1e-3 * ssim_loss #  0.9 * ssim_loss + 0.05 * mse_loss
+        return mae_loss

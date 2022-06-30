@@ -27,10 +27,10 @@ def cli_main(args):
     # data
     # ------------
     # this creates a k-space mask for transforming input data
-    mask = create_mask_for_mask_type("poisson_3d", args.center_fractions, args.accelerations)
-    train_transform = VarNetDataTransformVolume4D(mask_func=mask, use_seed=False)
-    val_transform = VarNetDataTransformVolume4D(mask_func=mask)
-    test_transform = VarNetDataTransformVolume4D()
+    mask = create_mask_for_mask_type("equispaced_fraction_dense_center_3d", args.center_fractions, args.accelerations)
+    train_transform = VarNetDataTransformVolume4DGrappa(mask_func=mask, use_seed=False)
+    val_transform = VarNetDataTransformVolume4DGrappa(mask_func=mask)
+    test_transform = VarNetDataTransformVolume4DGrappa()
 
     # ptl data module - this handles data loaders
     data_module = FastMriDataModule(
@@ -207,8 +207,8 @@ def build_args():
         if ckpt_list:
             args.resume_from_checkpoint = str(ckpt_list[-1])
     # args.resume_from_checkpoint = r"C:\Users\follels\Documents\fastMRI\logs\varnet\varnet_demo\checkpoints\fastmri_checkpoint_35732.ckpt"
-    # print("Not resuming from checkpoint!")
-    # args.resume_from_checkpoint = None
+    print("Not resuming from checkpoint!")
+    args.resume_from_checkpoint = None
 
     return args
 
@@ -307,6 +307,33 @@ if __name__ == "__main__":
 
 # Run 132: VarNet3D1D, poisson sampling
 # Run 133: Continue 132 /w mae loss
+# Run 134: Use fastmri checkpoint -> train further
 
-# TODO: Switch to poisson sampling /wo grappa init, save 100 us patterns -> load during training
+# Run 135: Image space net only
+# Run 136: Image space net only, mse
+# Run 137: Image space net only, combined
+
+# Run 142: VarNet3D1D /w hamming window (compare with 131 & 126)
+# Run 143: VarNet3D1D /w hamming window, modified conv (3.8M) (1D Conv along offsets after each 3D Conv)
+# Run 144: VarNet3D1D, modified conv (3.8M) (1D Conv along offsets after each 3D Conv)
+# Run 145: VarNet3D1D, wnet (3.1M)
+# Run 146: VarNet3D1D, wnet + ImageNet(unit init)
+# Run 147: VarNet3D1D, wnet + ImageNet residual (unit init)
+
+# Run 148: Shifted cartesian sampling over offsets, VarNet3D1D (grappa weights individually for each offset), filled_kspace
+# Run 149: Shifted cartesian sampling over offsets, VarNet3D1D (grappa weights individually for each offset), masked_kspace_imputed (better than 150 & 148)
+# Run 150 Shifted cartesian sampling over offsets, VarNet3D1D (grappa weights individually for each offset), masked_kspace
+
+# Run 151: Continue 149
+
+# Run 152 Corrected ACS, shifted cartesian sampling over offsets, filled kspace as input, compare with 148, 149 and 150
+# Run 153 Corrected ACS, shifted cartesian sampling over offsets, filled kspace as input, combined loss (mse + ssim)
+# Run 154: Hamming window after first varnet block, ssim loss
+# Run 155: Ssim + tv loss
+# Run 156: 1D Unet only
+# Run 158: Imagespace 3D Unet only (best so far 90 SSIM)
+# Run 158: Imagespace 3D Unet only, ssim + mse
+
+#  TODO: try dropout
+
 

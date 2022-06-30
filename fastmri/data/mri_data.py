@@ -572,8 +572,8 @@ class RealCESTData(VolumeDataset):
                                            os.PathLike] = "/opt/tmp/dataset_cache.pkl",
                  num_cols: Optional[Tuple[int]] = None,
                  cache_path=None,
-                 num_offsets: int = 8,
-                 number_of_simultaneous_offsets=8,
+                 num_offsets: int = 16,
+                 number_of_simultaneous_offsets=16,
                  grappa_init=True):
         super().__init__(root, challenge, transform, use_dataset_cache, sample_rate,
                          volume_sample_rate, dataset_cache_file, num_cols, cache_path)
@@ -591,7 +591,8 @@ class RealCESTData(VolumeDataset):
         for scan in scans:
             with h5py.File(scan, "r") as f:
                 kspace = np.array(f["kspace"])  # offset, slices, readout, channels, phase
-            kspace = 100 * (kspace["real"] + 1j* kspace["imag"])
+            # kspace = 100 * (kspace["real"] + 1j* kspace["imag"])
+            kspace = kspace["real"] + 1j* kspace["imag"]
             kspace = np.transpose(kspace, (3, 0, 1, 2, 4))  # channels, offsets, slices, readout, phase
             kspace = torch.from_numpy(np.stack((kspace.real, kspace.imag), -1))
             offset_targets = []
@@ -614,8 +615,8 @@ class RealCESTData(VolumeDataset):
         return len(self.cases)
 
     def __getitem__(self, i):
-        # sample = self.get_cache(i)
-        sample = self.generate_sample(i)
+        sample = self.get_cache(i)
+        # sample = self.generate_sample(i)
         return sample
     
     def get_cache(self, i: int):
@@ -643,6 +644,31 @@ class RealCESTData(VolumeDataset):
         sample = self.cases[i]
         sample = self.transform(sample[0], sample[1],
                         sample[2], sample[3], sample[4], -1)
+        return sample
+    
+
+class CenterKspaceCEST(RealCESTData):
+    def generate_sample(self, i):
+        sample = self.cases[i]
+        kspace, mask, target, attrs, fname = sample
+        center_kspace = kspace[:, :, 5:15, 32:96, 64:192]
+        mask = torch.ones(center_kspace.shape)
+        center_kspace = torch.nn.functional.pad(center_kspace, (0, 0, 64, 64, 32, 32, 5, 5))
+        mask = torch.nn.functional.pad(mask, (0, 0, 64, 64, 32, 32, 5, 5))
+        acs = center_kspace[..., 64-12:64+12, :, :]
+        sample = VarNetSample(
+            masked_kspace=center_kspace,
+            mask=mask.to(torch.bool),
+            filled_kspace=center_kspace,
+            acs=acs,
+            num_low_frequencies=0,
+            target=target,
+            fname=fname,
+            slice_num=-1,
+            max_value=1,
+            crop_size=[1],
+            masked_kspace_imputed=center_kspace,
+        )
         return sample
 
 
@@ -790,18 +816,56 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
     from utils.matplotlib_viewer import scroll_slices
     from tqdm import trange
+    from pygrappa.mdgrappa import mdgrappa
+    import matplotlib.pyplot as plt
 
-
-    mask = create_mask_for_mask_type("poisson_3d", [0], [9])
+    mask = create_mask_for_mask_type("equispaced_fraction_full_center_3d", [0], [9])
     # use random masks for train transform, fixed masks for val transform
-    transform = VarNetDataTransformVolume4D(mask_func=mask, use_seed=False)
+    transform = VarNetDataTransformVolume4DGrappa(mask_func=mask, use_seed=False)
     # cest_ds = CESTDataset("/home/woody/iwi5/iwi5044h/fastMRI/multicoil_train", "multicoil", transform, use_dataset_cache=False, cache_path="/home/woody/iwi5/iwi5044h/Code/fastMRI/cache_test")
-    cest_ds = RealCESTData(r"E:\Lukas\cest_data\Probanden\Mareike\output\multicoil_train", "multicoil", transform=transform, use_dataset_cache=False,
-                          cache_path=r"C:\Users\follels\Documents\fastMRI\cache\poisson\cache_train")
+    cest_ds = RealCESTData(r"C:\Zwischenspeicher\output\multicoil_val", "multicoil", transform=transform, use_dataset_cache=False,
+                          cache_path=r"C:\Users\follels\Documents\fastMRI\cache\center_fully\cache_val")
 
     for i in trange(len(cest_ds)):
         item = cest_ds.__getitem__(i)
         print(f"\n\nItem {i}")
+    
+    mask = create_mask_for_mask_type("equispaced_fraction_full_center_3d", [0], [9])
+    # use random masks for train transform, fixed masks for val transform
+    transform = VarNetDataTransformVolume4DGrappa(mask_func=mask, use_seed=False)
+    # cest_ds = CESTDataset("/home/woody/iwi5/iwi5044h/fastMRI/multicoil_train", "multicoil", transform, use_dataset_cache=False, cache_path="/home/woody/iwi5/iwi5044h/Code/fastMRI/cache_test")
+    cest_ds = RealCESTData(r"C:\Zwischenspeicher\output\multicoil_train", "multicoil", transform=transform, use_dataset_cache=False,
+                          cache_path=r"C:\Users\follels\Documents\fastMRI\cache\center_fully\cache_train")
+
+    for i in trange(len(cest_ds)):
+        item = cest_ds.__getitem__(i)
+        print(f"\n\nItem {i}")
+        
+        # plt.subplot(1,2,1)
+        # plt.plot(item.target[:, 10, 24:32, 65:85].reshape((8, -1)).sum(1))
+        # plt.title("Fully-sampled")
+        # k_space_downsampled = item.filled_kspace
+        # k_space_downsampled = torch.view_as_real(k_space_downsampled[..., 0] + 1j * k_space_downsampled[..., 1])
+        # volume = fastmri.ifft3c(k_space_downsampled)
+        # volume = fastmri.complex_abs(volume)
+        # volume = fastmri.rss(volume, dim=0)
+        # volume = volume[..., 64:192]
+        # plt.subplot(1,2,2)
+        # plt.title("GRAPPA Undersampling")
+        # plt.plot(volume[:, 10, 24:32, 65:85].reshape((8, -1)).sum(1))
+        # plt.show()
+        # print()
+        
+        # offset = 0
+        # k_space_downsampled = item.filled_kspace[:, offset]
+        # k_space_downsampled = torch.view_as_real(k_space_downsampled[..., 0] + 1j * k_space_downsampled[..., 1])
+        # volume = fastmri.ifft3c(k_space_downsampled)
+        # volume = fastmri.complex_abs(volume)
+        # volume = fastmri.rss(volume, dim=0)
+        # volume = (volume - volume.min()) / (volume.max() - volume.min())
+        # plt.imshow(volume[10])
+        # plt.show()
+        # print()
         # for offset in range(item.target.shape[0]):
         # offset = 0
         # mask = item.mask.numpy().squeeze()[..., 0]
